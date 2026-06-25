@@ -26,12 +26,12 @@ an account or bank connection.
 
 ## Install
 
-1. Download `Ledgerly-1.0.0.dmg` from the
+1. Download `Ledgerly-2.0.0.dmg` from the
    [latest GitHub Release](https://github.com/YodaGuru/Ledgerly/releases/latest).
 2. Open the disk image.
 3. Drag Ledgerly into Applications.
 
-Ledgerly 1.0.0 is currently ad-hoc signed and not Apple-notarized. macOS may
+Ledgerly 2.0.0 is currently ad-hoc signed and not Apple-notarized. macOS may
 show a Gatekeeper warning when opening a downloaded build.
 
 ## Privacy
@@ -57,7 +57,7 @@ chmod +x build.sh
 ./build.sh
 ```
 
-The script creates the app and `Ledgerly-1.0.0.dmg`. It targets Apple silicon
+The script creates the app and `Ledgerly-2.0.0.dmg`. It targets Apple silicon
 and macOS 13 or later.
 
 ## Support and security

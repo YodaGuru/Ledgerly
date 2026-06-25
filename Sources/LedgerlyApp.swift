@@ -2,6 +2,8 @@ import SwiftUI
 import UserNotifications
 import AppKit
 import Security
+import LinkPresentation
+import CoreImage
 
 enum PasswordKeychain {
     private static let service = "com.local.ledgerly.password"
@@ -147,6 +149,7 @@ struct Bill: Identifiable, Codable, Hashable {
     var id = UUID()
     var name: String
     var amount: Double
+    var isVariableAmount: Bool
     var dueDate: Date
     var frequency: BillFrequency
     var category: String
@@ -163,6 +166,7 @@ struct Bill: Identifiable, Codable, Hashable {
         id: UUID = UUID(),
         name: String,
         amount: Double,
+        isVariableAmount: Bool = false,
         dueDate: Date,
         frequency: BillFrequency,
         category: String,
@@ -178,6 +182,7 @@ struct Bill: Identifiable, Codable, Hashable {
         self.id = id
         self.name = name
         self.amount = amount
+        self.isVariableAmount = isVariableAmount
         self.dueDate = dueDate
         self.frequency = frequency
         self.category = category
@@ -192,7 +197,7 @@ struct Bill: Identifiable, Codable, Hashable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, amount, dueDate, frequency, category, colorHex, website
+        case id, name, amount, isVariableAmount, dueDate, frequency, category, colorHex, website
         case notes, reminderDays, isAutoPay, payments, attachments, isArchived
     }
 
@@ -201,6 +206,7 @@ struct Bill: Identifiable, Codable, Hashable {
         id = try values.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         name = try values.decode(String.self, forKey: .name)
         amount = try values.decode(Double.self, forKey: .amount)
+        isVariableAmount = try values.decodeIfPresent(Bool.self, forKey: .isVariableAmount) ?? false
         dueDate = try values.decode(Date.self, forKey: .dueDate)
         frequency = try values.decode(BillFrequency.self, forKey: .frequency)
         category = try values.decode(String.self, forKey: .category)
@@ -225,6 +231,14 @@ struct Bill: Identifiable, Codable, Hashable {
         if isPaidForCurrentCycle { return .paid }
         if dueDate < Calendar.current.startOfDay(for: Date()) { return .overdue }
         return .upcoming
+    }
+
+    var lastPaidDate: Date? {
+        payments.map(\.date).max()
+    }
+
+    var amountDisplayText: String {
+        isVariableAmount ? "Variable" : amount.currency
     }
 
     var websiteURL: URL? {
@@ -633,7 +647,7 @@ final class BillStore: ObservableObject {
 
                 let content = UNMutableNotificationContent()
                 content.title = "\(bill.name) is due soon"
-                content.body = "\(bill.name) is due \(bill.dueDate.formatted(date: .abbreviated, time: .omitted)) for \(bill.amount.currency)."
+                content.body = "\(bill.name) is due \(bill.dueDate.formatted(date: .abbreviated, time: .omitted)) for \(bill.amountDisplayText)."
                 content.sound = .default
 
                 let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: reminderDate)
@@ -680,7 +694,7 @@ final class BillStore: ObservableObject {
         return [
             Bill(name: "Apartment Rent", amount: 1850, dueDate: day(2), frequency: .monthly, category: "Home", colorHex: "#F2854A", website: "", notes: "Paid from checking", reminderDays: 3, isAutoPay: false, payments: []),
             Bill(name: "Electric", amount: 94.20, dueDate: day(6), frequency: .monthly, category: "Utilities", colorHex: "#E8B448", website: "", notes: "", reminderDays: 2, isAutoPay: true, payments: []),
-            Bill(name: "Mobile Phone", amount: 68, dueDate: day(10), frequency: .monthly, category: "Utilities", colorHex: "#4E8FD3", website: "", notes: "", reminderDays: 2, isAutoPay: true, payments: []),
+            Bill(name: "Mobile Phone", amount: 68, isVariableAmount: true, dueDate: day(10), frequency: .monthly, category: "Utilities", colorHex: "#4E8FD3", website: "", notes: "", reminderDays: 2, isAutoPay: true, payments: []),
             Bill(name: "Car Insurance", amount: 522, dueDate: day(18), frequency: .quarterly, category: "Transport", colorHex: "#7B6AD8", website: "", notes: "Policy renewal", reminderDays: 7, isAutoPay: false, payments: []),
             Bill(name: "Streaming Bundle", amount: 24.99, dueDate: day(-2), frequency: .monthly, category: "Subscriptions", colorHex: "#D85F74", website: "", notes: "", reminderDays: 1, isAutoPay: false, payments: [])
         ]
@@ -725,14 +739,10 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            HStack(spacing: 0) {
+            NavigationSplitView {
                 Sidebar(selection: $selection)
                     .frame(width: 250)
-
-                Rectangle()
-                    .fill(Color.ledgerlyDivider)
-                    .frame(width: 1)
-
+            } detail: {
                 Group {
                     switch selection {
                     case .overview, .dueSoon, .dueMonth, .paidRecently, .archive:
@@ -748,7 +758,9 @@ struct ContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.ledgerlyWorkspace)
             }
+            .navigationSplitViewStyle(.balanced)
             .allowsHitTesting(!isLocked)
 
             if isLocked {
@@ -871,15 +883,15 @@ struct Sidebar: View {
             HStack(spacing: 10) {
                 Image(systemName: "calendar.badge.checkmark")
                     .font(.title2)
-                    .foregroundStyle(Color(hex: "#E47845"))
+                    .foregroundStyle(Color(hex: "#4E8FD3"))
 
                 Text("Ledgerly")
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.ledgerlyPrimaryText)
             }
             .padding(.horizontal, 18)
-            .padding(.top, 26)
-            .padding(.bottom, 20)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -911,13 +923,12 @@ struct Sidebar: View {
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("Private and stored locally · Version 1.0.0")
+                Text("Private and stored locally · Version 2.0.0")
                     .font(.caption)
                     .foregroundStyle(Color.ledgerlySecondaryText)
             }
             .padding(18)
         }
-        .modifier(LedgerlySidebarGlassBackground())
     }
 
     private func sidebarButton(_ item: SidebarItem) -> some View {
@@ -1066,10 +1077,18 @@ struct OverviewView: View {
     @AppStorage("showAmounts") private var showAmounts = true
     @AppStorage("showPaidBills") private var showPaidBills = true
     @AppStorage("dueSoonDays") private var dueSoonDays = 7
+    @AppStorage("overviewRightPaneWidth") private var overviewRightPaneWidth = 350.0
+    @AppStorage("overviewNameColumnWidth") private var overviewNameColumnWidth = 320.0
+    @AppStorage("overviewAmountColumnWidth") private var overviewAmountColumnWidth = 110.0
+    @AppStorage("overviewDueDateColumnWidth") private var overviewDueDateColumnWidth = 160.0
+    @AppStorage("overviewLastPaidColumnWidth") private var overviewLastPaidColumnWidth = 140.0
     @State private var selectedBillID: UUID?
     @State private var editingBill: Bill?
     @State private var payingBill: Bill?
     @State private var searchText = ""
+    @State private var nameColumnDragStartWidth: CGFloat?
+    @State private var amountColumnDragStartWidth: CGFloat?
+    @State private var dueDateColumnDragStartWidth: CGFloat?
 
     private var visibleBills: [Bill] {
         let calendar = Calendar.current
@@ -1106,13 +1125,26 @@ struct OverviewView: View {
     var body: some View {
         GeometryReader { geometry in
             let compact = geometry.size.width < 900
-            let sideWidth: CGFloat = compact ? 300 : 350
+            let minWidth: CGFloat = compact ? 300 : 260
+            let maxWidth: CGFloat = compact ? 340 : min(560, max(320, geometry.size.width * 0.42))
+            let sideWidth: CGFloat = min(max(CGFloat(overviewRightPaneWidth), minWidth), maxWidth)
+            let amountsVisible = !compact && showAmounts
+            let nameWidth: CGFloat = min(max(CGFloat(overviewNameColumnWidth), 190), compact ? 220 : 420)
+            let amountWidth: CGFloat = min(max(CGFloat(overviewAmountColumnWidth), 90), compact ? 110 : 180)
+            let dueDateWidth: CGFloat = min(max(CGFloat(overviewDueDateColumnWidth), 120), compact ? 160 : 240)
+            let lastPaidWidth: CGFloat = min(max(CGFloat(overviewLastPaidColumnWidth), 110), compact ? 130 : 160)
 
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
                     listToolbar(compact: compact)
-                    Divider()
-                    columnHeader(compact: compact)
+                    columnHeader(
+                        compact: compact,
+                        amountsVisible: amountsVisible,
+                        nameWidth: nameWidth,
+                        amountWidth: amountWidth,
+                        dueDateWidth: dueDateWidth,
+                        lastPaidWidth: lastPaidWidth
+                    )
                     Divider()
                     if visibleBills.isEmpty {
                         EmptyState(
@@ -1132,12 +1164,17 @@ struct OverviewView: View {
                                         Button {
                                             selectedBillID = bill.id
                                         } label: {
-                                            DesktopBillRow(
-                                                bill: bill,
-                                                isSelected: bill.id == selectedBill?.id,
-                                                compact: compact
-                                            )
-                                        }
+                                        DesktopBillRow(
+                                            bill: bill,
+                                            isSelected: bill.id == selectedBill?.id,
+                                            compact: compact,
+                                            amountsVisible: amountsVisible,
+                                            nameWidth: nameWidth,
+                                            amountWidth: amountWidth,
+                                            dueDateWidth: dueDateWidth,
+                                            lastPaidWidth: lastPaidWidth
+                                        )
+                                    }
                                         .buttonStyle(.plain)
                                         .contextMenu {
                                             if bill.isArchived {
@@ -1160,7 +1197,26 @@ struct OverviewView: View {
                 .frame(maxWidth: .infinity)
                 .background(Color.ledgerlyListSurface)
 
-                Divider()
+                if compact {
+                    Color.clear.frame(width: 1)
+                } else {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(width: 10)
+                        .contentShape(Rectangle())
+                        .overlay(alignment: .center) {
+                            Rectangle()
+                                .fill(Color.ledgerlyDivider.opacity(0.42))
+                                .frame(width: 1)
+                        }
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in
+                                    let proposed = sideWidth - value.translation.width
+                                    overviewRightPaneWidth = Double(min(max(proposed, minWidth), maxWidth))
+                                }
+                        )
+                }
 
                 if let bill = selectedBill {
                     BillInspector(
@@ -1218,25 +1274,106 @@ struct OverviewView: View {
                 .frame(width: compact ? 145 : 230)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .ledgerlyGlass(in: Rectangle())
+        .padding(.vertical, 0)
     }
 
-    private func columnHeader(compact: Bool) -> some View {
-        HStack(spacing: 14) {
+    private func columnHeader(
+        compact: Bool,
+        amountsVisible: Bool,
+        nameWidth: CGFloat,
+        amountWidth: CGFloat,
+        dueDateWidth: CGFloat,
+        lastPaidWidth: CGFloat
+    ) -> some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: 46)
+
             Text("Name")
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if !compact && showAmounts {
+                .frame(width: nameWidth, alignment: .leading)
+
+            columnResizeSlot(gesture: nameResizeGesture(currentWidth: nameWidth))
+
+            if amountsVisible {
                 Text("Amount")
-                    .frame(width: 110, alignment: .trailing)
+                    .frame(width: amountWidth, alignment: .trailing)
+
+                columnResizeSlot(gesture: amountResizeGesture(currentWidth: amountWidth))
             }
+
             Text("Due Date")
-                .frame(width: compact ? 125 : 160, alignment: .leading)
+                .frame(width: dueDateWidth, alignment: .leading)
+
+            columnResizeSlot(gesture: dueDateResizeGesture(currentWidth: dueDateWidth))
+
+            Text("Last Paid")
+                .frame(width: lastPaidWidth, alignment: .leading)
         }
         .font(.caption.bold())
         .foregroundStyle(.secondary)
         .padding(.horizontal, 18)
-        .padding(.vertical, 8)
+        .padding(.vertical, 1)
+    }
+
+    private func columnResizeSlot<G: Gesture>(gesture: G) -> some View {
+        ZStack {
+            Color.clear.frame(width: 8, height: 16)
+            resizeHandle
+        }
+        .frame(width: 8, height: 16)
+        .contentShape(Rectangle())
+        .gesture(gesture)
+    }
+
+    private var resizeHandle: some View {
+        HStack(spacing: 2) {
+            Capsule().fill(Color.secondary.opacity(0.38)).frame(width: 2, height: 12)
+            Capsule().fill(Color.secondary.opacity(0.38)).frame(width: 2, height: 12)
+        }
+        .frame(width: 16, height: 16)
+        .contentShape(Rectangle())
+        .help("Drag to resize column")
+    }
+
+    private func nameResizeGesture(currentWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if nameColumnDragStartWidth == nil {
+                    nameColumnDragStartWidth = currentWidth
+                }
+                guard let start = nameColumnDragStartWidth else { return }
+                overviewNameColumnWidth = Double(min(max(start + value.translation.width, 190), 420))
+            }
+            .onEnded { _ in
+                nameColumnDragStartWidth = nil
+            }
+    }
+
+    private func amountResizeGesture(currentWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if amountColumnDragStartWidth == nil {
+                    amountColumnDragStartWidth = currentWidth
+                }
+                guard let start = amountColumnDragStartWidth else { return }
+                overviewAmountColumnWidth = Double(min(max(start + value.translation.width, 90), 180))
+            }
+            .onEnded { _ in
+                amountColumnDragStartWidth = nil
+            }
+    }
+
+    private func dueDateResizeGesture(currentWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if dueDateColumnDragStartWidth == nil {
+                    dueDateColumnDragStartWidth = currentWidth
+                }
+                guard let start = dueDateColumnDragStartWidth else { return }
+                overviewDueDateColumnWidth = Double(min(max(start + value.translation.width, 120), 240))
+            }
+            .onEnded { _ in
+                dueDateColumnDragStartWidth = nil
+            }
     }
 }
 
@@ -1244,10 +1381,15 @@ struct DesktopBillRow: View {
     let bill: Bill
     let isSelected: Bool
     let compact: Bool
+    let amountsVisible: Bool
+    let nameWidth: CGFloat
+    let amountWidth: CGFloat
+    let dueDateWidth: CGFloat
+    let lastPaidWidth: CGFloat
     @AppStorage("showAmounts") private var showAmounts = true
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 8) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color(hex: bill.colorHex).opacity(0.16))
@@ -1259,18 +1401,19 @@ struct DesktopBillRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(bill.name)
                     .fontWeight(.semibold)
+                    .lineLimit(1)
                 HStack(spacing: 5) {
                     Text(bill.frequency.displayText)
                 }
                 .font(.caption)
                 .foregroundStyle(isSelected ? Color.white.opacity(0.82) : Color.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: nameWidth, alignment: .leading)
 
-            if !compact && showAmounts {
-                Text(bill.amount.currency)
+            if amountsVisible {
+                Text(bill.amountDisplayText)
                     .fontWeight(.semibold)
-                    .frame(width: 110, alignment: .trailing)
+                    .frame(width: amountWidth, alignment: .trailing)
             }
 
             HStack(spacing: 9) {
@@ -1285,7 +1428,12 @@ struct DesktopBillRow: View {
                         .foregroundStyle(isSelected ? Color.white.opacity(0.82) : Color.secondary)
                 }
             }
-            .frame(width: compact ? 125 : 160, alignment: .leading)
+            .frame(width: dueDateWidth, alignment: .leading)
+
+            Text(bill.lastPaidDate?.formatted(date: .abbreviated, time: .omitted) ?? "—")
+                .foregroundStyle(isSelected ? Color.white.opacity(0.82) : Color.secondary)
+                .frame(width: lastPaidWidth, alignment: .leading)
+                .lineLimit(1)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -1442,7 +1590,7 @@ struct MonthlyCalendarPanel: View {
                     .padding(20)
             }
         }
-        .background(Color.ledgerlyInspector)
+        .background(Color.ledgerlyWorkspace)
     }
 }
 
@@ -1529,13 +1677,27 @@ struct BillInspector: View {
     @State private var notesDraft = ""
     @State private var notesSaveTask: Task<Void, Never>?
     @State private var showingBillHistory = false
+    @State private var websiteBrandImage: NSImage?
+    @State private var websiteBrandAccent: Color?
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Circle()
-                    .fill(Color(hex: bill.colorHex))
-                    .frame(width: 10, height: 10)
+                if let websiteBrandImage {
+                    Image(nsImage: websiteBrandImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 36, height: 36)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill((websiteBrandAccent ?? Color(hex: bill.colorHex)).opacity(0.18))
+                        )
+                } else {
+                    Circle()
+                        .fill(websiteBrandAccent ?? Color(hex: bill.colorHex))
+                        .frame(width: 16, height: 16)
+                }
                 Text(bill.name)
                     .font(.title3.bold())
                 Spacer()
@@ -1552,7 +1714,7 @@ struct BillInspector: View {
             .background(
                 LinearGradient(
                     colors: [
-                        Color(hex: bill.colorHex).opacity(0.24),
+                        (websiteBrandAccent ?? Color(hex: bill.colorHex)).opacity(0.24),
                         Color.ledgerlyInspectorHeader
                     ],
                     startPoint: .leading,
@@ -1567,7 +1729,7 @@ struct BillInspector: View {
                             .font(.system(size: 25, weight: .bold, design: .rounded))
                         Text(bill.dueDate.formatted(date: .complete, time: .omitted))
                             .foregroundStyle(.secondary)
-                        Text(bill.amount.currency)
+                        Text(bill.amountDisplayText)
                             .font(.title3.bold())
                             .foregroundStyle(bill.status.color)
                     }
@@ -1638,6 +1800,9 @@ struct BillInspector: View {
                 store.updateNotes(for: bill, notes: notesDraft)
             }
         }
+        .task(id: bill.websiteURL?.absoluteString) {
+            await loadWebsiteBrand()
+        }
         .sheet(isPresented: $showingBillHistory) {
             BillPaymentHistoryView(bill: bill)
         }
@@ -1650,6 +1815,73 @@ struct BillInspector: View {
             guard !Task.isCancelled else { return }
             store.updateNotes(for: bill, notes: notes)
         }
+    }
+
+    private func loadWebsiteBrand() async {
+        guard let websiteURL = bill.websiteURL else {
+            websiteBrandImage = nil
+            websiteBrandAccent = nil
+            return
+        }
+
+        let provider = LPMetadataProvider()
+        guard let metadata = await fetchMetadata(provider: provider, url: websiteURL) else {
+            websiteBrandImage = nil
+            websiteBrandAccent = nil
+            return
+        }
+
+        if let provider = metadata.iconProvider ?? metadata.imageProvider,
+           let image = await loadImage(from: provider) {
+            websiteBrandImage = image
+            websiteBrandAccent = averageAccentColor(from: image)
+        } else {
+            websiteBrandImage = nil
+            websiteBrandAccent = nil
+        }
+    }
+
+    private func fetchMetadata(provider: LPMetadataProvider, url: URL) async -> LPLinkMetadata? {
+        await withCheckedContinuation { continuation in
+            provider.startFetchingMetadata(for: url) { metadata, _ in
+                continuation.resume(returning: metadata)
+            }
+        }
+    }
+
+    private func loadImage(from provider: NSItemProvider) async -> NSImage? {
+        await withCheckedContinuation { continuation in
+            provider.loadObject(ofClass: NSImage.self) { object, _ in
+                continuation.resume(returning: object as? NSImage)
+            }
+        }
+    }
+
+    private func averageAccentColor(from image: NSImage) -> Color? {
+        guard let tiff = image.tiffRepresentation,
+              let ciImage = CIImage(data: tiff) else { return nil }
+
+        guard let filter = CIFilter(name: "CIAreaAverage") else { return nil }
+        filter.setValue(ciImage, forKey: kCIInputImageKey)
+        filter.setValue(CIVector(cgRect: ciImage.extent), forKey: kCIInputExtentKey)
+        guard let output = filter.outputImage else { return nil }
+
+        let context = CIContext(options: nil)
+        var bitmap = [UInt8](repeating: 0, count: 4)
+        context.render(
+            output,
+            toBitmap: &bitmap,
+            rowBytes: 4,
+            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            format: .RGBA8,
+            colorSpace: CGColorSpaceCreateDeviceRGB()
+        )
+
+        return Color(
+            red: Double(bitmap[0]) / 255.0,
+            green: Double(bitmap[1]) / 255.0,
+            blue: Double(bitmap[2]) / 255.0
+        )
     }
 }
 
@@ -1859,7 +2091,7 @@ struct BillRow: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 3) {
-                Text(bill.amount.currency)
+                Text(bill.amountDisplayText)
                     .fontWeight(.bold)
                 Text(bill.status.rawValue)
                     .font(.caption2.bold())
@@ -2321,7 +2553,7 @@ struct BillPaymentHistoryView: View {
             }
         }
         .frame(width: 520, height: 440)
-        .background(Color.ledgerlyInspector)
+        .background(Color.ledgerlyWorkspace)
     }
 }
 
@@ -2436,14 +2668,16 @@ struct SettingsView: View {
                             Text(tab.rawValue)
                                 .font(.caption)
                         }
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, minHeight: 54)
                         .foregroundStyle(selectedTab == tab ? Color.white : Color.ledgerlySecondaryText)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
                         .background(
                             selectedTab == tab ? Color(hex: "#4E8FD3") : Color.clear,
                             in: RoundedRectangle(cornerRadius: 10)
                         )
                     }
+                    .frame(maxWidth: .infinity)
                     .buttonStyle(.plain)
                 }
             }
@@ -2628,12 +2862,6 @@ struct SettingsView: View {
                 }
             }
 
-            SettingsGroup(title: "Privacy") {
-                LabeledContent("Bank connection", value: "None")
-                LabeledContent("Online account", value: "Not required")
-                LabeledContent("Analytics", value: "None")
-            }
-
             SettingsGroup(title: "Password Protection") {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
@@ -2665,7 +2893,7 @@ struct SettingsView: View {
             }
 
             SettingsGroup(title: "About") {
-                LabeledContent("Ledgerly", value: "Version 1.0.0")
+                LabeledContent("Ledgerly", value: "Version 2.0.0")
                 Text("A focused, private bill organizer for macOS.")
                     .foregroundStyle(.secondary)
             }
@@ -2825,6 +3053,7 @@ struct BillEditorView: View {
     private let existingBill: Bill?
     @State private var name: String
     @State private var amount: Double
+    @State private var isVariableAmount: Bool
     @State private var dueDate: Date
     @State private var frequency: BillFrequency
     @State private var category: String
@@ -2844,6 +3073,7 @@ struct BillEditorView: View {
             : UserDefaults.standard.integer(forKey: "defaultReminderDays")
         _name = State(initialValue: existingBill?.name ?? "")
         _amount = State(initialValue: existingBill?.amount ?? 0)
+        _isVariableAmount = State(initialValue: existingBill?.isVariableAmount ?? false)
         _dueDate = State(initialValue: existingBill?.dueDate ?? Date())
         _frequency = State(initialValue: existingBill?.frequency ?? .monthly)
         _category = State(initialValue: existingBill?.category ?? "Utilities")
@@ -2872,7 +3102,8 @@ struct BillEditorView: View {
             Form {
                 Section("Bill") {
                     TextField("Name", text: $name)
-                    TextField("Amount", value: $amount, format: .currency(code: Locale.current.currency?.identifier ?? "USD"))
+                    Toggle("Variable amount", isOn: $isVariableAmount)
+                    TextField(isVariableAmount ? "Estimated amount" : "Amount", value: $amount, format: .currency(code: Locale.current.currency?.identifier ?? "USD"))
                     DatePicker("Due date", selection: $dueDate, displayedComponents: .date)
                     Picker("Repeats", selection: $frequency) {
                         ForEach(BillFrequency.allCases) { Text($0.rawValue).tag($0) }
@@ -2918,6 +3149,7 @@ struct BillEditorView: View {
             id: existingBill?.id ?? UUID(),
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             amount: amount,
+            isVariableAmount: isVariableAmount,
             dueDate: dueDate,
             frequency: frequency,
             category: category,
