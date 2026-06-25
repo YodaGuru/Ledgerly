@@ -48,7 +48,7 @@ enum PasswordKeychain {
     }
 }
 
-// MARK: - Model
+// Model
 
 enum BillFrequency: String, Codable, CaseIterable, Identifiable {
     case weekly = "Weekly"
@@ -363,6 +363,7 @@ final class BillStore: ObservableObject {
         try? FileManager.default.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
         load()
         loadIncome()
+        refreshReminders()
         updateDockBadge()
     }
 
@@ -559,13 +560,45 @@ final class BillStore: ObservableObject {
     }
 
     func requestNotifications() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error {
+                print("Ledgerly notification authorization failed: \(error.localizedDescription)")
+                return
+            }
+
+            if granted {
+                Task { @MainActor in
+                    self.refreshReminders()
+                    self.updateDockBadge()
+                }
+            }
+        }
     }
 
     func refreshReminders() {
-        for bill in bills where !bill.isArchived {
-            scheduleReminder(for: bill)
+        let center = UNUserNotificationCenter.current()
+
+        guard notificationsAreEnabled else {
+            center.removeAllPendingNotificationRequests()
+            return
         }
+
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
+                return
+            }
+
+            Task { @MainActor in
+                for bill in self.bills where !bill.isArchived {
+                    self.scheduleReminder(for: bill)
+                }
+            }
+        }
+    }
+
+    private var notificationsAreEnabled: Bool {
+        UserDefaults.standard.object(forKey: "notificationsEnabled") == nil ||
+        UserDefaults.standard.bool(forKey: "notificationsEnabled")
     }
 
     func updateDockBadge() {
@@ -587,36 +620,55 @@ final class BillStore: ObservableObject {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [bill.id.uuidString])
 
-        guard UserDefaults.standard.object(forKey: "notificationsEnabled") == nil ||
-              UserDefaults.standard.bool(forKey: "notificationsEnabled") else { return }
+        guard notificationsAreEnabled else { return }
+        guard !bill.isArchived else { return }
 
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
+                return
+            }
+
+            Task { @MainActor in
+                guard let reminderDate = self.reminderDate(for: bill), reminderDate > Date() else { return }
+
+                let content = UNMutableNotificationContent()
+                content.title = "\(bill.name) is due soon"
+                content.body = "\(bill.name) is due \(bill.dueDate.formatted(date: .abbreviated, time: .omitted)) for \(bill.amount.currency)."
+                content.sound = .default
+
+                let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: reminderDate)
+                let request = UNNotificationRequest(
+                    identifier: bill.id.uuidString,
+                    content: content,
+                    trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+                )
+
+                center.add(request) { error in
+                    if let error {
+                        print("Ledgerly failed to schedule notification for \(bill.name): \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+
+    private func reminderDate(for bill: Bill) -> Date? {
         guard let reminderDay = Calendar.current.date(
             byAdding: .day,
             value: -bill.reminderDays,
             to: bill.dueDate
-        ) else { return }
+        ) else { return nil }
+
         let reminderHour = UserDefaults.standard.object(forKey: "reminderHour") == nil
             ? 9
             : UserDefaults.standard.integer(forKey: "reminderHour")
-        guard let reminderDate = Calendar.current.date(
+
+        return Calendar.current.date(
             bySettingHour: reminderHour,
             minute: 0,
             second: 0,
             of: reminderDay
-        ), reminderDate > Date() else { return }
-
-        let content = UNMutableNotificationContent()
-        content.title = "\(bill.name) is due soon"
-        content.body = "\(bill.name) is due \(bill.dueDate.formatted(date: .abbreviated, time: .omitted)) for \(bill.amount.currency)."
-        content.sound = .default
-
-        let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: reminderDate)
-        let request = UNNotificationRequest(
-            identifier: bill.id.uuidString,
-            content: content,
-            trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
         )
-        center.add(request)
     }
 
     static func sampleBills() -> [Bill] {
@@ -635,7 +687,7 @@ final class BillStore: ObservableObject {
     }
 }
 
-// MARK: - App
+// App
 
 @main
 struct LedgerlyApp: App {
@@ -711,7 +763,7 @@ struct ContentView: View {
                 Color.ledgerlyWorkspace
                 LinearGradient(
                     colors: [
-                        Color(hex: "#D76538").opacity(0.10),
+                        Color(hex: "#4E8FD3").opacity(0.10),
                         Color(hex: "#7B6AD8").opacity(0.06),
                         Color.clear
                     ],
@@ -721,7 +773,7 @@ struct ContentView: View {
             }
             .ignoresSafeArea()
         }
-        .tint(Color(hex: "#D76538"))
+        .tint(Color(hex: "#4E8FD3"))
         .sheet(isPresented: $showingAddBill) {
             BillEditorView()
                 .environmentObject(store)
@@ -764,7 +816,7 @@ struct AppLockView: View {
             VStack(spacing: 18) {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 38))
-                    .foregroundStyle(Color(hex: "#D76538"))
+                    .foregroundStyle(Color(hex: "#4E8FD3"))
 
                 Text("Ledgerly is locked")
                     .font(.title2.bold())
@@ -820,6 +872,7 @@ struct Sidebar: View {
                 Image(systemName: "calendar.badge.checkmark")
                     .font(.title2)
                     .foregroundStyle(Color(hex: "#E47845"))
+
                 Text("Ledgerly")
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.ledgerlyPrimaryText)
@@ -840,6 +893,7 @@ struct Sidebar: View {
                         if incomeEnabled {
                             sidebarButton(.income)
                         }
+
                         ForEach([SidebarItem.forecast, .history]) { item in
                             sidebarButton(item)
                         }
@@ -857,16 +911,13 @@ struct Sidebar: View {
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(Date().formatted(.dateTime.month(.wide).year()))
-                    .font(.subheadline.bold())
-                    .foregroundStyle(Color.ledgerlyPrimaryText)
                 Text("Private and stored locally · Version 1.0.0")
                     .font(.caption)
                     .foregroundStyle(Color.ledgerlySecondaryText)
             }
             .padding(18)
         }
-        .ledgerlyGlass(in: Rectangle())
+        .modifier(LedgerlySidebarGlassBackground())
     }
 
     private func sidebarButton(_ item: SidebarItem) -> some View {
@@ -886,23 +937,50 @@ struct Sidebar: View {
         let active = store.bills.filter { !$0.isArchived }
         let calendar = Calendar.current
         let bills: [Bill]
+
         switch item {
         case .overview:
             bills = showPaidBills ? active : active.filter { $0.status != .paid }
+
         case .dueSoon:
             let limit = calendar.date(byAdding: .day, value: dueSoonDays, to: Date())!
-            bills = active.filter { $0.dueDate <= limit && $0.status != .paid }
+            bills = active.filter {
+                $0.dueDate <= limit && $0.status != .paid
+            }
+
         case .dueMonth:
-            bills = active.filter { calendar.isDate($0.dueDate, equalTo: Date(), toGranularity: .month) }
+            bills = active.filter {
+                calendar.isDate($0.dueDate, equalTo: Date(), toGranularity: .month)
+            }
+
         case .paidRecently:
             bills = active.filter { !$0.payments.isEmpty }
+
         case .archive:
             return nil
+
         default:
             return nil
         }
+
         let total = bills.reduce(0) { $0 + $1.amount }
-        return showAmounts ? "\(bills.count) · \(total.currency)" : "\(bills.count)"
+
+        return showAmounts
+            ? "\(bills.count) · \(total.currency)"
+            : "\(bills.count)"
+    }
+}
+
+struct LedgerlySidebarGlassBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content
+                .background(.clear)
+                .glassEffect(.regular.interactive(), in: Rectangle())
+        } else {
+            content
+                .ledgerlyGlass(in: Rectangle())
+        }
     }
 }
 
@@ -952,15 +1030,34 @@ struct SidebarRow: View {
         .foregroundStyle(isSelected ? Color.white : Color.ledgerlyPrimaryText)
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
-        .background(
-            isSelected ? Color(hex: "#D76538") : Color.clear,
-            in: RoundedRectangle(cornerRadius: 10)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(LedgerlySidebarSelectionBackground(isSelected: isSelected))
         .contentShape(Rectangle())
     }
 }
 
-// MARK: - Overview
+struct LedgerlySidebarSelectionBackground: ViewModifier {
+    let isSelected: Bool
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content
+                .background(
+                    isSelected ? Color.white.opacity(0.10) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+                .glassEffect(isSelected ? .regular.interactive() : .identity, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        } else {
+            content
+                .background(
+                    isSelected ? Color(hex: "#4E8FD3") : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 10)
+                )
+        }
+    }
+}
+
+// Overview
 
 struct OverviewView: View {
     @EnvironmentObject private var store: BillStore
@@ -1194,7 +1291,7 @@ struct DesktopBillRow: View {
         .padding(.vertical, 8)
         .foregroundStyle(isSelected ? Color.white : Color.primary)
         .background(
-            isSelected ? Color(hex: "#D76538") : Color.clear,
+            isSelected ? Color(hex: "#4E8FD3") : Color.clear,
             in: RoundedRectangle(cornerRadius: 9)
         )
         .contentShape(Rectangle())
@@ -1282,7 +1379,7 @@ struct MonthlyCalendarPanel: View {
                                 .foregroundStyle(Calendar.current.isDateInToday(day) ? Color.white : Color.primary)
                                 .frame(width: 27, height: 27)
                                 .background(
-                                    Calendar.current.isDateInToday(day) ? Color(hex: "#D76538") : Color.clear,
+                                    Calendar.current.isDateInToday(day) ? Color(hex: "#4E8FD3") : Color.clear,
                                     in: RoundedRectangle(cornerRadius: 7)
                                 )
                             HStack(spacing: 2) {
@@ -1586,7 +1683,7 @@ struct AttachmentRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "doc.fill")
-                .foregroundStyle(Color(hex: "#D76538"))
+                .foregroundStyle(Color(hex: "#4E8FD3"))
             VStack(alignment: .leading, spacing: 2) {
                 Text(attachment.fileName)
                     .lineLimit(1)
@@ -1710,7 +1807,7 @@ struct CalendarDay: View {
                 .foregroundStyle(Calendar.current.isDateInToday(day) ? .white : .primary)
                 .frame(width: 27, height: 27)
                 .background(
-                    Calendar.current.isDateInToday(day) ? Color(hex: "#D76538") : Color.clear,
+                    Calendar.current.isDateInToday(day) ? Color(hex: "#4E8FD3") : Color.clear,
                     in: Circle()
                 )
             HStack(spacing: 3) {
@@ -1791,7 +1888,7 @@ struct BillRow: View {
     }
 }
 
-// MARK: - Forecast
+// Forecast
 
 struct IncomeView: View {
     @EnvironmentObject private var store: BillStore
@@ -1999,7 +2096,7 @@ struct ForecastView: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                             RoundedRectangle(cornerRadius: 7)
-                                .fill(index == 0 ? Color(hex: "#D76538") : Color(hex: "#EDB28E"))
+                                .fill(index == 0 ? Color(hex: "#4E8FD3") : Color(hex: "#EDB28E"))
                                 .frame(height: max(8, 250 * totals[index] / maxTotal))
                             Text(month.formatted(.dateTime.month(.narrow)))
                                 .font(.caption.bold())
@@ -2048,7 +2145,7 @@ struct ForecastView: View {
     }
 }
 
-// MARK: - Payment History
+// Payment History
 
 struct PaymentHistoryView: View {
     @EnvironmentObject private var store: BillStore
@@ -2181,7 +2278,7 @@ struct BillPaymentHistoryView: View {
                                     .fontWeight(.bold)
                                 if !payment.attachments.isEmpty {
                                     Image(systemName: "paperclip.circle.fill")
-                                        .foregroundStyle(Color(hex: "#D76538"))
+                                        .foregroundStyle(Color(hex: "#4E8FD3"))
                                 }
                             }
                             .padding(16)
@@ -2204,7 +2301,7 @@ struct BillPaymentHistoryView: View {
                                     } label: {
                                         HStack {
                                             Image(systemName: "doc.fill")
-                                                .foregroundStyle(Color(hex: "#D76538"))
+                                                .foregroundStyle(Color(hex: "#4E8FD3"))
                                             Text(attachment.fileName)
                                                 .lineLimit(1)
                                             Spacer()
@@ -2279,7 +2376,7 @@ struct PaymentHistoryRow: View {
     }
 }
 
-// MARK: - Settings
+// Settings
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
@@ -2343,7 +2440,7 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .background(
-                            selectedTab == tab ? Color(hex: "#D76538") : Color.clear,
+                            selectedTab == tab ? Color(hex: "#4E8FD3") : Color.clear,
                             in: RoundedRectangle(cornerRadius: 10)
                         )
                     }
@@ -2710,6 +2807,7 @@ struct SettingsGroup<Content: View>: View {
         .toggleStyle(.switch)
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .background(Color.ledgerlyReportCard, in: RoundedRectangle(cornerRadius: 14))
         .overlay {
             RoundedRectangle(cornerRadius: 14)
@@ -2718,7 +2816,7 @@ struct SettingsGroup<Content: View>: View {
     }
 }
 
-// MARK: - Editors
+// Editors
 
 struct BillEditorView: View {
     @EnvironmentObject private var store: BillStore
@@ -2884,7 +2982,7 @@ struct PaymentView: View {
                     ForEach(attachmentURLs, id: \.self) { url in
                         HStack {
                             Image(systemName: "doc.fill")
-                                .foregroundStyle(Color(hex: "#D76538"))
+                                .foregroundStyle(Color(hex: "#4E8FD3"))
                             Text(url.lastPathComponent)
                                 .lineLimit(1)
                             Spacer()
@@ -2955,7 +3053,7 @@ struct PaymentView: View {
     }
 }
 
-// MARK: - Helpers
+// Helpers
 
 struct PaymentEntry: Identifiable {
     let bill: Bill
