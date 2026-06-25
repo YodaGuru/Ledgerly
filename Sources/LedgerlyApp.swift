@@ -370,7 +370,7 @@ final class BillStore: ObservableObject {
         defer { hasLoaded = true }
         guard let data = try? Data(contentsOf: storageURL),
               let decoded = try? JSONDecoder().decode([Bill].self, from: data) else {
-            bills = Self.sampleBills()
+            bills = []
             return
         }
         bills = decoded
