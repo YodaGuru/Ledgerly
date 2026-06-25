@@ -4,7 +4,7 @@ Ledgerly is a private, native bill organizer for macOS. It keeps bills, income,
 payment history, receipts, reminders, and forecasts together without requiring
 an account or bank connection.
 
-![Ledgerly payment history](docs/images/payment-history.png)
+![Ledgerly payment history](docs/images/main.png)
 
 ## Features
 
