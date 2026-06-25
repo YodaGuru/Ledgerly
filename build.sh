@@ -6,7 +6,7 @@ BUILD="/private/tmp/LedgerlyBuild"
 APP="$BUILD/Ledgerly.app"
 DMG_ROOT="$BUILD/dmg"
 OUTPUT="$ROOT/../outputs"
-VERSION="1.0.0"
+VERSION="2.0.0"
 DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 SDKROOT="$(DEVELOPER_DIR="$DEVELOPER_DIR" xcrun --sdk macosx --show-sdk-path)"
 
@@ -25,6 +25,8 @@ DEVELOPER_DIR="$DEVELOPER_DIR" xcrun swiftc \
   -framework SwiftUI \
   -framework AppKit \
   -framework Security \
+  -framework LinkPresentation \
+  -framework CoreImage \
   -framework UserNotifications \
   "$ROOT/Sources/LedgerlyApp.swift" \
   -o "$APP/Contents/MacOS/Ledgerly"
