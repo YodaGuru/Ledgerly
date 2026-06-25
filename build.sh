@@ -6,7 +6,7 @@ BUILD="/private/tmp/LedgerlyBuild"
 APP="$BUILD/Ledgerly.app"
 DMG_ROOT="$BUILD/dmg"
 OUTPUT="$ROOT/../outputs"
-VERSION="2.0.0"
+VERSION="2.0.1"
 DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 SDKROOT="$(DEVELOPER_DIR="$DEVELOPER_DIR" xcrun --sdk macosx --show-sdk-path)"
 
