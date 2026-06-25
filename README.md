@@ -1,25 +1,71 @@
 # Ledgerly
 
-Ledgerly is a private, native macOS bill organizer inspired by the focused,
-calendar-first workflow of Chronicle. It uses original branding and interface
-design.
+Ledgerly is a private, native bill organizer for macOS. It keeps bills, income,
+payment history, receipts, reminders, and forecasts together without requiring
+an account or bank connection.
 
-Features:
+![Ledgerly payment history](docs/images/payment-history.png)
 
-- Calendar overview with upcoming, overdue, and paid states
-- Recurring weekly, monthly, quarterly, yearly, or one-time bills
-- Local notifications
-- Payment history and confirmation numbers
-- Twelve-month forecast
-- Monthly set-aside recommendations for larger periodic bills
-- Categories, color coding, autopay labels, notes, and biller links
-- Three-pane desktop layout with status summaries and a persistent bill inspector
-- Local file attachments for receipts, statements, PDFs, and images
-- Local JSON storage with no account or bank connection
+## Features
 
-Build the app and DMG:
+- Overview for upcoming, overdue, paid, and archived bills
+- Weekly, monthly, quarterly, yearly, and one-time schedules
+- Local notification reminders and configurable Due Soon badges
+- Payment history with confirmation numbers and attachments
+- Twelve-month bill forecast and monthly set-aside suggestions
+- Income tracking with a monthly after-bills summary
+- Automatic-payment logging for eligible bills
+- Local password protection backed by macOS Keychain
+- Liquid Glass interface on macOS 26 with adaptive material fallbacks
+- Local JSON storage with no analytics, cloud account, or bank connection
+
+## Requirements
+
+- Apple silicon Mac
+- macOS 13 or later
+- macOS 26 for native Liquid Glass effects
+
+## Install
+
+1. Download `Ledgerly-1.0.0.dmg` from the
+   [latest GitHub Release](https://github.com/YodaGuru/Ledgerly/releases/latest).
+2. Open the disk image.
+3. Drag Ledgerly into Applications.
+
+Ledgerly 1.0.0 is currently ad-hoc signed and not Apple-notarized. macOS may
+show a Gatekeeper warning when opening a downloaded build. A Developer ID
+signed and notarized distribution is planned for a future release.
+
+## Privacy
+
+Ledgerly stores its data locally in:
+
+```text
+~/Library/Application Support/Ledgerly
+```
+
+The app does not connect to a bank, require an online account, collect
+analytics, or send financial data to a server. Password protection stores the
+password in macOS Keychain.
+
+## Build from source
+
+Building requires the current Xcode command-line tools and Python 3 with
+[Pillow](https://pypi.org/project/pillow/).
 
 ```sh
 chmod +x build.sh
 ./build.sh
 ```
+
+The script creates the app and `Ledgerly-1.0.0.dmg`. It targets Apple silicon
+and macOS 13 or later.
+
+## Support and security
+
+Use GitHub Issues for ordinary bugs and feature requests. Please report
+security-sensitive problems privately according to [SECURITY.md](SECURITY.md).
+
+## License
+
+Ledgerly is proprietary software. See [LICENSE](LICENSE).
