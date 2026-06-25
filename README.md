@@ -4,7 +4,7 @@ Ledgerly is a private, native bill organizer for macOS. It keeps bills, income,
 payment history, receipts, reminders, and forecasts together without requiring
 an account or bank connection.
 
-![Ledgerly overview](docs/images/main.png)
+![Ledgerly payment history](docs/images/main.png)
 
 ## Features
 
@@ -23,7 +23,6 @@ an account or bank connection.
 
 - Apple silicon Mac
 - macOS 13 or later
-- macOS 26 for native Liquid Glass effects
 
 ## Install
 
@@ -33,8 +32,7 @@ an account or bank connection.
 3. Drag Ledgerly into Applications.
 
 Ledgerly 1.0.0 is currently ad-hoc signed and not Apple-notarized. macOS may
-show a Gatekeeper warning when opening a downloaded build. A Developer ID
-signed and notarized distribution is planned for a future release.
+show a Gatekeeper warning when opening a downloaded build.
 
 ## Privacy
 
@@ -43,6 +41,7 @@ Ledgerly stores its data locally in:
 ```text
 ~/Library/Application Support/Ledgerly
 ```
+The location can be changed in Settings.
 
 The app does not connect to a bank, require an online account, collect
 analytics, or send financial data to a server. Password protection stores the
@@ -65,8 +64,7 @@ and macOS 13 or later.
 
 Use GitHub Issues for ordinary bugs and feature requests. Please report
 security-sensitive problems privately according to [SECURITY.md](SECURITY.md).
-Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Ledgerly is available under the [MIT License](LICENSE).
+Ledgerly is proprietary software. See [LICENSE](LICENSE).
