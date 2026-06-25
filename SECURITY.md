@@ -13,8 +13,9 @@ Security fixes are provided for the latest published Ledgerly release.
 
 Please do not disclose security vulnerabilities in a public GitHub issue.
 
-Use GitHub's private vulnerability reporting or create a private repository
-security advisory for `YodaGuru/Ledgerly`. Include:
+Use **Security → Report a vulnerability** in the GitHub repository. This opens
+a private report visible only to the reporter and repository maintainers.
+Include:
 
 - A description of the issue and its potential impact
 - Reproduction steps or a proof of concept

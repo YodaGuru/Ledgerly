@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    name: Swift type-check
+    runs-on: macos-26
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate metadata
+        run: |
+          plutil -lint Info.plist
+          zsh -n build.sh
+
+      - name: Type-check Ledgerly
+        run: |
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          xcrun swiftc \
+            -parse-as-library \
+            -typecheck \
+            -target arm64-apple-macos13.0 \
+            -sdk "$SDKROOT" \
+            -module-cache-path "$RUNNER_TEMP/LedgerlyModuleCache" \
+            -framework SwiftUI \
+            -framework AppKit \
+            -framework Security \
+            -framework UserNotifications \
+            Sources/LedgerlyApp.swift
