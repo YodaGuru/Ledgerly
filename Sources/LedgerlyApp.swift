@@ -922,11 +922,13 @@ struct Sidebar: View {
                 .padding(.horizontal, 10)
             }
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Private and stored locally · Version 2.0.0")
+            VStack(spacing: 5) {
+                Text("Version 2.0.1")
                     .font(.caption)
                     .foregroundStyle(Color.ledgerlySecondaryText)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
+            .frame(maxWidth: .infinity)
             .padding(18)
         }
     }
@@ -1085,6 +1087,7 @@ struct OverviewView: View {
     @State private var selectedBillID: UUID?
     @State private var editingBill: Bill?
     @State private var payingBill: Bill?
+    @State private var billPendingDeletion: Bill?
     @State private var searchText = ""
     @State private var nameColumnDragStartWidth: CGFloat?
     @State private var amountColumnDragStartWidth: CGFloat?
@@ -1176,16 +1179,18 @@ struct OverviewView: View {
                                         )
                                     }
                                         .buttonStyle(.plain)
-                                        .contextMenu {
-                                            if bill.isArchived {
-                                                Button("Unarchive") { store.unarchive(bill) }
-                                            } else {
-                                                Button("Edit Bill") { editingBill = bill }
-                                                Button("Log Payment") { payingBill = bill }
-                                                Divider()
-                                                Button("Archive") { store.archive(bill) }
-                                            }
+                                    .contextMenu {
+                                        if bill.isArchived {
+                                            Button("Unarchive") { store.unarchive(bill) }
+                                            Button("Delete Bill…", role: .destructive) { billPendingDeletion = bill }
+                                        } else {
+                                            Button("Edit Bill") { editingBill = bill }
+                                            Button("Log Payment") { payingBill = bill }
+                                            Divider()
+                                            Button("Archive") { store.archive(bill) }
+                                            Button("Delete Bill…", role: .destructive) { billPendingDeletion = bill }
                                         }
+                                    }
                                     }
                                 }
                                 .padding(10)
@@ -1241,9 +1246,34 @@ struct OverviewView: View {
             PaymentView(bill: bill)
                 .environmentObject(store)
         }
+        .alert("Delete Bill?", isPresented: deleteBillAlertBinding, presenting: billPendingDeletion) { bill in
+            Button("Cancel", role: .cancel) {
+                billPendingDeletion = nil
+            }
+            Button("Delete", role: .destructive) {
+                if selectedBillID == bill.id {
+                    selectedBillID = nil
+                }
+                store.delete(bill)
+                billPendingDeletion = nil
+            }
+        } message: { bill in
+            Text("Are you sure you want to permanently delete \"\(bill.name)\"? This action cannot be undone.")
+        }
         .onChange(of: filter) { _ in
             selectedBillID = nil
         }
+    }
+
+    private var deleteBillAlertBinding: Binding<Bool> {
+        Binding(
+            get: { billPendingDeletion != nil },
+            set: { isPresented in
+                if !isPresented {
+                    billPendingDeletion = nil
+                }
+            }
+        )
     }
 
     private func listToolbar(compact: Bool) -> some View {
@@ -1273,8 +1303,8 @@ struct OverviewView: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(width: compact ? 145 : 230)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 0)
+        .padding(.horizontal, 24)
+        .frame(height: 54, alignment: .center)
     }
 
     private func columnHeader(
@@ -1285,8 +1315,8 @@ struct OverviewView: View {
         dueDateWidth: CGFloat,
         lastPaidWidth: CGFloat
     ) -> some View {
-        HStack(spacing: 0) {
-            Color.clear.frame(width: 46)
+        HStack(spacing: 8) {
+            Color.clear.frame(width: 42, height: 1)
 
             Text("Name")
                 .frame(width: nameWidth, alignment: .leading)
@@ -1310,26 +1340,26 @@ struct OverviewView: View {
         }
         .font(.caption.bold())
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 1)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 4)
     }
 
     private func columnResizeSlot<G: Gesture>(gesture: G) -> some View {
         ZStack {
-            Color.clear.frame(width: 8, height: 16)
+            Color.clear.frame(width: 18, height: 18)
             resizeHandle
         }
-        .frame(width: 8, height: 16)
+        .frame(width: 18, height: 18)
         .contentShape(Rectangle())
         .gesture(gesture)
     }
 
     private var resizeHandle: some View {
-        HStack(spacing: 2) {
-            Capsule().fill(Color.secondary.opacity(0.38)).frame(width: 2, height: 12)
-            Capsule().fill(Color.secondary.opacity(0.38)).frame(width: 2, height: 12)
+        HStack(spacing: 3) {
+            Capsule().fill(Color.secondary.opacity(0.34)).frame(width: 2, height: 12)
+            Capsule().fill(Color.secondary.opacity(0.34)).frame(width: 2, height: 12)
         }
-        .frame(width: 16, height: 16)
+        .frame(width: 18, height: 18)
         .contentShape(Rectangle())
         .help("Drag to resize column")
     }
