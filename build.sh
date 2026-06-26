@@ -5,16 +5,29 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 BUILD="/private/tmp/LedgerlyBuild"
 APP="$BUILD/Ledgerly.app"
 DMG_ROOT="$BUILD/dmg"
+ICON_BUILD="$BUILD/IconAssets"
 OUTPUT="$ROOT/../outputs"
-VERSION="2.0.1"
+VERSION="2.0.2"
 DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 SDKROOT="$(DEVELOPER_DIR="$DEVELOPER_DIR" xcrun --sdk macosx --show-sdk-path)"
 
 rm -rf "$BUILD"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$DMG_ROOT" "$OUTPUT"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$DMG_ROOT" "$ICON_BUILD" "$OUTPUT"
 
-python3 "$ROOT/make_icon.py" "$BUILD"
-cp "$BUILD/AppIcon.iconset/icon_512x512@2x.png" "$APP/Contents/Resources/AppIcon.png"
+DEVELOPER_DIR="$DEVELOPER_DIR" xcrun actool \
+  --compile "$ICON_BUILD" \
+  --platform macosx \
+  --minimum-deployment-target 13.0 \
+  --app-icon icon \
+  --standalone-icon-behavior all \
+  --output-partial-info-plist "$ICON_BUILD/IconInfo.plist" \
+  --warnings \
+  --errors \
+  --notices \
+  --output-format human-readable-text \
+  "$ROOT/docs/images/icon.icon"
+cp "$ICON_BUILD/Assets.car" "$APP/Contents/Resources/Assets.car"
+cp "$ICON_BUILD/icon.icns" "$APP/Contents/Resources/icon.icns"
 
 DEVELOPER_DIR="$DEVELOPER_DIR" xcrun swiftc \
   -parse-as-library \
