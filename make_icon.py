@@ -7,7 +7,7 @@ build = Path(sys.argv[1]) if len(sys.argv) > 1 else root / "build"
 iconset = build / "AppIcon.iconset"
 iconset.mkdir(parents=True, exist_ok=True)
 
-source_icon = root / "docs" / "images" / "icon.png"
+source_icon = root / "docs" / "images" / "Icon Exports" / "Icon-iOS-Default-1024x1024@1x.png"
 if not source_icon.exists():
     raise FileNotFoundError(f"Missing source icon: {source_icon}")
 

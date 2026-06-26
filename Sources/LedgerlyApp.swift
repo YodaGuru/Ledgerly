@@ -112,18 +112,83 @@ struct Payment: Identifiable, Codable, Hashable {
 }
 
 struct IncomeSource: Identifiable, Codable, Hashable {
+    enum Frequency: String, Codable, CaseIterable, Identifiable {
+        case weekly = "Weekly"
+        case twiceMonthly = "Twice monthly"
+        case monthly = "Monthly"
+        case quarterly = "Quarterly"
+        case yearly = "Yearly"
+        case once = "One time"
+
+        var id: String { rawValue }
+
+        var displayText: String {
+            switch self {
+            case .weekly: return "Every week"
+            case .twiceMonthly: return "Twice monthly"
+            case .monthly: return "Every month"
+            case .quarterly: return "Every 3 months"
+            case .yearly: return "Every year"
+            case .once: return "One time"
+            }
+        }
+    }
+
     var id = UUID()
     var name: String
     var amount: Double
     var nextDate: Date
-    var frequency: BillFrequency
+    var frequency: Frequency
+    var firstPayday: Int
+    var secondPayday: Int
     var notes: String
     var colorHex: String
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        amount: Double,
+        nextDate: Date,
+        frequency: Frequency,
+        firstPayday: Int = 15,
+        secondPayday: Int = 30,
+        notes: String,
+        colorHex: String
+    ) {
+        self.id = id
+        self.name = name
+        self.amount = amount
+        self.nextDate = nextDate
+        self.frequency = frequency
+        self.firstPayday = firstPayday
+        self.secondPayday = secondPayday
+        self.notes = notes
+        self.colorHex = colorHex
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, amount, nextDate, frequency, firstPayday, secondPayday, notes, colorHex
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try values.decode(String.self, forKey: .name)
+        amount = try values.decode(Double.self, forKey: .amount)
+        nextDate = try values.decode(Date.self, forKey: .nextDate)
+        frequency = try values.decode(Frequency.self, forKey: .frequency)
+        firstPayday = try values.decodeIfPresent(Int.self, forKey: .firstPayday) ?? 15
+        secondPayday = try values.decodeIfPresent(Int.self, forKey: .secondPayday) ?? 30
+        notes = try values.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        colorHex = try values.decodeIfPresent(String.self, forKey: .colorHex) ?? "#58A66B"
+    }
 
     func estimatedAmount(in month: Date) -> Double {
         switch frequency {
         case .weekly:
             return amount * 4.33
+        case .twiceMonthly:
+            return amount * 2
         case .monthly:
             return amount
         case .quarterly:
@@ -135,6 +200,29 @@ struct IncomeSource: Identifiable, Codable, Hashable {
                 ? amount
                 : 0
         }
+    }
+
+    func nextExpectedDate(from date: Date = Date()) -> Date {
+        guard frequency == .twiceMonthly else { return nextDate }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: date)
+        let days = [firstPayday, secondPayday].sorted()
+
+        for monthOffset in 0...1 {
+            guard let month = calendar.date(byAdding: .month, value: monthOffset, to: today),
+                  let range = calendar.range(of: .day, in: .month, for: month) else { continue }
+
+            for day in days {
+                var components = calendar.dateComponents([.year, .month], from: month)
+                components.day = min(day, range.count)
+                if let candidate = calendar.date(from: components), candidate >= today {
+                    return candidate
+                }
+            }
+        }
+
+        return nextDate
     }
 }
 
@@ -156,6 +244,7 @@ struct Bill: Identifiable, Codable, Hashable {
     var colorHex: String
     var website: String
     var notes: String
+    var isReminderEnabled: Bool
     var reminderDays: Int
     var isAutoPay: Bool
     var payments: [Payment]
@@ -173,6 +262,7 @@ struct Bill: Identifiable, Codable, Hashable {
         colorHex: String,
         website: String,
         notes: String,
+        isReminderEnabled: Bool = true,
         reminderDays: Int,
         isAutoPay: Bool,
         payments: [Payment],
@@ -189,6 +279,7 @@ struct Bill: Identifiable, Codable, Hashable {
         self.colorHex = colorHex
         self.website = website
         self.notes = notes
+        self.isReminderEnabled = isReminderEnabled
         self.reminderDays = reminderDays
         self.isAutoPay = isAutoPay
         self.payments = payments
@@ -198,7 +289,7 @@ struct Bill: Identifiable, Codable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, amount, isVariableAmount, dueDate, frequency, category, colorHex, website
-        case notes, reminderDays, isAutoPay, payments, attachments, isArchived
+        case notes, isReminderEnabled, reminderDays, isAutoPay, payments, attachments, isArchived
     }
 
     init(from decoder: Decoder) throws {
@@ -213,6 +304,7 @@ struct Bill: Identifiable, Codable, Hashable {
         colorHex = try values.decode(String.self, forKey: .colorHex)
         website = try values.decodeIfPresent(String.self, forKey: .website) ?? ""
         notes = try values.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        isReminderEnabled = try values.decodeIfPresent(Bool.self, forKey: .isReminderEnabled) ?? true
         reminderDays = try values.decodeIfPresent(Int.self, forKey: .reminderDays) ?? 3
         isAutoPay = try values.decodeIfPresent(Bool.self, forKey: .isAutoPay) ?? false
         payments = try values.decodeIfPresent([Payment].self, forKey: .payments) ?? []
@@ -347,8 +439,27 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     }
 }
 
+enum StorageMoveError: LocalizedError {
+    case destinationNotEmpty
+    case invalidDestination
+    case verificationFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .destinationNotEmpty:
+            return "The selected location already contains a non-empty Ledgerly folder. Choose another location."
+        case .invalidDestination:
+            return "Choose a location outside the current Ledgerly data folder."
+        case .verificationFailed:
+            return "Ledgerly could not verify the copied data, so the current storage location was left unchanged."
+        }
+    }
+}
+
 @MainActor
 final class BillStore: ObservableObject {
+    private static let customStoragePathKey = "customStoragePath"
+
     @Published var bills: [Bill] = [] {
         didSet {
             scheduleSave()
@@ -358,18 +469,25 @@ final class BillStore: ObservableObject {
     @Published var incomes: [IncomeSource] = [] {
         didSet { scheduleIncomeSave() }
     }
+    @Published private(set) var storageFolder: URL
 
-    private let storageURL: URL
-    private let incomeStorageURL: URL
-    private let attachmentsURL: URL
+    private var storageURL: URL
+    private var incomeStorageURL: URL
+    private var attachmentsURL: URL
     private var hasLoaded = false
     private var pendingSave: DispatchWorkItem?
     private var pendingIncomeSave: DispatchWorkItem?
     private let persistenceQueue = DispatchQueue(label: "com.local.ledgerly.persistence", qos: .utility)
 
     init() {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let folder = support.appendingPathComponent("Ledgerly", isDirectory: true)
+        let folder: URL
+        if let customPath = UserDefaults.standard.string(forKey: Self.customStoragePathKey) {
+            folder = URL(fileURLWithPath: customPath, isDirectory: true)
+        } else {
+            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            folder = support.appendingPathComponent("Ledgerly", isDirectory: true)
+        }
+        storageFolder = folder
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         storageURL = folder.appendingPathComponent("bills.json")
         incomeStorageURL = folder.appendingPathComponent("income.json")
@@ -379,6 +497,62 @@ final class BillStore: ObservableObject {
         loadIncome()
         refreshReminders()
         updateDockBadge()
+    }
+
+    func moveStorage(to selectedFolder: URL) throws {
+        let destination = selectedFolder.lastPathComponent == "Ledgerly"
+            ? selectedFolder
+            : selectedFolder.appendingPathComponent("Ledgerly", isDirectory: true)
+        let source = storageFolder.standardizedFileURL
+        let target = destination.standardizedFileURL
+
+        guard source != target else { return }
+        guard !target.path.hasPrefix(source.path + "/") else {
+            throw StorageMoveError.invalidDestination
+        }
+
+        pendingSave?.cancel()
+        pendingIncomeSave?.cancel()
+        try saveCurrentData()
+
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: target.path) {
+            let contents = try fileManager.contentsOfDirectory(
+                at: target,
+                includingPropertiesForKeys: nil
+            )
+            guard contents.isEmpty else {
+                throw StorageMoveError.destinationNotEmpty
+            }
+            try fileManager.removeItem(at: target)
+        }
+
+        try fileManager.createDirectory(
+            at: target.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try fileManager.copyItem(at: source, to: target)
+
+        guard fileManager.fileExists(atPath: target.appendingPathComponent("bills.json").path) ||
+              !fileManager.fileExists(atPath: source.appendingPathComponent("bills.json").path) else {
+            try? fileManager.removeItem(at: target)
+            throw StorageMoveError.verificationFailed
+        }
+
+        storageFolder = target
+        storageURL = target.appendingPathComponent("bills.json")
+        incomeStorageURL = target.appendingPathComponent("income.json")
+        attachmentsURL = target.appendingPathComponent("Attachments", isDirectory: true)
+        try fileManager.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
+        UserDefaults.standard.set(target.path, forKey: Self.customStoragePathKey)
+
+        try? fileManager.removeItem(at: source)
+    }
+
+    private func saveCurrentData() throws {
+        let encoder = JSONEncoder()
+        try encoder.encode(bills).write(to: storageURL, options: .atomic)
+        try encoder.encode(incomes).write(to: incomeStorageURL, options: .atomic)
     }
 
     func load() {
@@ -636,6 +810,7 @@ final class BillStore: ObservableObject {
 
         guard notificationsAreEnabled else { return }
         guard !bill.isArchived else { return }
+        guard bill.isReminderEnabled else { return }
 
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
@@ -733,15 +908,16 @@ extension Notification.Name {
 struct ContentView: View {
     @EnvironmentObject private var store: BillStore
     @State private var selection: SidebarItem = .overview
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showingAddBill = false
     @AppStorage("passwordProtectionEnabled") private var passwordProtectionEnabled = false
     @State private var isLocked = false
 
     var body: some View {
         ZStack {
-            NavigationSplitView {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
                 Sidebar(selection: $selection)
-                    .frame(width: 250)
+                    .navigationSplitViewColumnWidth(min: 250, ideal: 250, max: 250)
             } detail: {
                 Group {
                     switch selection {
@@ -802,6 +978,7 @@ struct ContentView: View {
             lockIfNeeded()
         }
         .onAppear {
+            columnVisibility = .all
             store.autoLogDuePayments()
             store.updateDockBadge()
             lockIfNeeded()
@@ -922,11 +1099,13 @@ struct Sidebar: View {
                 .padding(.horizontal, 10)
             }
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Private and stored locally · Version 2.0.0")
+            VStack(spacing: 5) {
+                Text("Version 2.0.2")
                     .font(.caption)
                     .foregroundStyle(Color.ledgerlySecondaryText)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
+            .frame(maxWidth: .infinity)
             .padding(18)
         }
     }
@@ -1085,10 +1264,12 @@ struct OverviewView: View {
     @State private var selectedBillID: UUID?
     @State private var editingBill: Bill?
     @State private var payingBill: Bill?
+    @State private var billPendingDeletion: Bill?
     @State private var searchText = ""
     @State private var nameColumnDragStartWidth: CGFloat?
     @State private var amountColumnDragStartWidth: CGFloat?
     @State private var dueDateColumnDragStartWidth: CGFloat?
+    @State private var lastPaidColumnDragStartWidth: CGFloat?
 
     private var visibleBills: [Bill] {
         let calendar = Calendar.current
@@ -1128,71 +1309,86 @@ struct OverviewView: View {
             let minWidth: CGFloat = compact ? 300 : 260
             let maxWidth: CGFloat = compact ? 340 : min(560, max(320, geometry.size.width * 0.42))
             let sideWidth: CGFloat = min(max(CGFloat(overviewRightPaneWidth), minWidth), maxWidth)
-            let amountsVisible = !compact && showAmounts
-            let nameWidth: CGFloat = min(max(CGFloat(overviewNameColumnWidth), 190), compact ? 220 : 420)
-            let amountWidth: CGFloat = min(max(CGFloat(overviewAmountColumnWidth), 90), compact ? 110 : 180)
-            let dueDateWidth: CGFloat = min(max(CGFloat(overviewDueDateColumnWidth), 120), compact ? 160 : 240)
-            let lastPaidWidth: CGFloat = min(max(CGFloat(overviewLastPaidColumnWidth), 110), compact ? 130 : 160)
+            let amountsVisible = showAmounts
+            let nameWidth: CGFloat = min(max(CGFloat(overviewNameColumnWidth), 190), 420)
+            let amountWidth: CGFloat = min(max(CGFloat(overviewAmountColumnWidth), 90), 180)
+            let dueDateWidth: CGFloat = min(max(CGFloat(overviewDueDateColumnWidth), 120), 240)
+            let lastPaidWidth: CGFloat = min(max(CGFloat(overviewLastPaidColumnWidth), 110), 240)
+            let dividerWidth: CGFloat = compact ? 1 : 10
+            let listPaneWidth = max(1, geometry.size.width - sideWidth - dividerWidth)
+            let tableWidth = max(
+                listPaneWidth,
+                42 + nameWidth + (amountsVisible ? amountWidth + 8 : 0)
+                    + dueDateWidth + lastPaidWidth + 72
+            )
 
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
                     listToolbar(compact: compact)
-                    columnHeader(
-                        compact: compact,
-                        amountsVisible: amountsVisible,
-                        nameWidth: nameWidth,
-                        amountWidth: amountWidth,
-                        dueDateWidth: dueDateWidth,
-                        lastPaidWidth: lastPaidWidth
-                    )
-                    Divider()
-                    if visibleBills.isEmpty {
-                        EmptyState(
-                            title: "No bills here",
-                            message: "Try another section or add a new bill.",
-                            icon: filter.icon
-                        )
-                    } else {
-                        ScrollView {
-                            ZStack(alignment: .top) {
-                                Color.clear
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { selectedBillID = nil }
+                    ScrollView(.horizontal) {
+                        VStack(spacing: 0) {
+                            columnHeader(
+                                compact: compact,
+                                amountsVisible: amountsVisible,
+                                nameWidth: nameWidth,
+                                amountWidth: amountWidth,
+                                dueDateWidth: dueDateWidth,
+                                lastPaidWidth: lastPaidWidth
+                            )
+                            if visibleBills.isEmpty {
+                                EmptyState(
+                                    title: "No bills here",
+                                    message: "Try another section or add a new bill.",
+                                    icon: filter.icon
+                                )
+                            } else {
+                                ScrollView(.vertical) {
+                                    ZStack(alignment: .top) {
+                                        Color.clear
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { selectedBillID = nil }
 
-                                LazyVStack(spacing: 2) {
-                                    ForEach(visibleBills) { bill in
-                                        Button {
-                                            selectedBillID = bill.id
-                                        } label: {
-                                        DesktopBillRow(
-                                            bill: bill,
-                                            isSelected: bill.id == selectedBill?.id,
-                                            compact: compact,
-                                            amountsVisible: amountsVisible,
-                                            nameWidth: nameWidth,
-                                            amountWidth: amountWidth,
-                                            dueDateWidth: dueDateWidth,
-                                            lastPaidWidth: lastPaidWidth
-                                        )
-                                    }
-                                        .buttonStyle(.plain)
-                                        .contextMenu {
-                                            if bill.isArchived {
-                                                Button("Unarchive") { store.unarchive(bill) }
-                                            } else {
-                                                Button("Edit Bill") { editingBill = bill }
-                                                Button("Log Payment") { payingBill = bill }
-                                                Divider()
-                                                Button("Archive") { store.archive(bill) }
+                                        LazyVStack(spacing: 2) {
+                                            ForEach(visibleBills) { bill in
+                                                Button {
+                                                    selectedBillID = bill.id
+                                                } label: {
+                                                    DesktopBillRow(
+                                                        bill: bill,
+                                                        isSelected: bill.id == selectedBill?.id,
+                                                        compact: compact,
+                                                        amountsVisible: amountsVisible,
+                                                        nameWidth: nameWidth,
+                                                        amountWidth: amountWidth,
+                                                        dueDateWidth: dueDateWidth,
+                                                        lastPaidWidth: lastPaidWidth
+                                                    )
+                                                }
+                                                .buttonStyle(.plain)
+                                                .contextMenu {
+                                                    if bill.isArchived {
+                                                        Button("Unarchive") { store.unarchive(bill) }
+                                                        Button("Delete Bill…", role: .destructive) { billPendingDeletion = bill }
+                                                    } else {
+                                                        Button("Edit Bill") { editingBill = bill }
+                                                        Button("Log Payment") { payingBill = bill }
+                                                        Divider()
+                                                        Button("Archive") { store.archive(bill) }
+                                                        Button("Delete Bill…", role: .destructive) { billPendingDeletion = bill }
+                                                    }
+                                                }
                                             }
                                         }
+                                        .padding(10)
                                     }
+                                    .frame(maxWidth: .infinity, minHeight: geometry.size.height - 105, alignment: .top)
                                 }
-                                .padding(10)
                             }
-                            .frame(maxWidth: .infinity, minHeight: geometry.size.height - 105, alignment: .top)
                         }
+                        .frame(width: tableWidth, height: geometry.size.height - 54, alignment: .top)
                     }
+                    .scrollIndicators(.visible)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity)
                 .background(Color.ledgerlyListSurface)
@@ -1241,9 +1437,34 @@ struct OverviewView: View {
             PaymentView(bill: bill)
                 .environmentObject(store)
         }
+        .alert("Delete Bill?", isPresented: deleteBillAlertBinding, presenting: billPendingDeletion) { bill in
+            Button("Cancel", role: .cancel) {
+                billPendingDeletion = nil
+            }
+            Button("Delete", role: .destructive) {
+                if selectedBillID == bill.id {
+                    selectedBillID = nil
+                }
+                store.delete(bill)
+                billPendingDeletion = nil
+            }
+        } message: { bill in
+            Text("Are you sure you want to permanently delete \"\(bill.name)\"? This action cannot be undone.")
+        }
         .onChange(of: filter) { _ in
             selectedBillID = nil
         }
+    }
+
+    private var deleteBillAlertBinding: Binding<Bool> {
+        Binding(
+            get: { billPendingDeletion != nil },
+            set: { isPresented in
+                if !isPresented {
+                    billPendingDeletion = nil
+                }
+            }
+        )
     }
 
     private func listToolbar(compact: Bool) -> some View {
@@ -1273,8 +1494,9 @@ struct OverviewView: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(width: compact ? 145 : 230)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 0)
+        .padding(.horizontal, 24)
+        .frame(height: 54)
+        .background(Color.ledgerlyListSurface)
     }
 
     private func columnHeader(
@@ -1285,51 +1507,80 @@ struct OverviewView: View {
         dueDateWidth: CGFloat,
         lastPaidWidth: CGFloat
     ) -> some View {
-        HStack(spacing: 0) {
-            Color.clear.frame(width: 46)
+        HStack(spacing: 8) {
+            Color.clear.frame(width: 42, height: 1)
 
-            Text("Name")
-                .frame(width: nameWidth, alignment: .leading)
-
-            columnResizeSlot(gesture: nameResizeGesture(currentWidth: nameWidth))
+            resizableColumnHeader(
+                "Name",
+                width: nameWidth,
+                alignment: .leading,
+                gesture: nameResizeGesture(currentWidth: nameWidth)
+            )
 
             if amountsVisible {
-                Text("Amount")
-                    .frame(width: amountWidth, alignment: .trailing)
-
-                columnResizeSlot(gesture: amountResizeGesture(currentWidth: amountWidth))
+                resizableColumnHeader(
+                    "Amount",
+                    width: amountWidth,
+                    alignment: .leading,
+                    gesture: amountResizeGesture(currentWidth: amountWidth)
+                )
             }
 
-            Text("Due Date")
-                .frame(width: dueDateWidth, alignment: .leading)
+            resizableColumnHeader(
+                "Due Date",
+                width: dueDateWidth,
+                alignment: .leading,
+                gesture: dueDateResizeGesture(currentWidth: dueDateWidth)
+            )
 
-            columnResizeSlot(gesture: dueDateResizeGesture(currentWidth: dueDateWidth))
-
-            Text("Last Paid")
-                .frame(width: lastPaidWidth, alignment: .leading)
+            resizableColumnHeader(
+                "Last Paid",
+                width: lastPaidWidth,
+                alignment: .leading,
+                gesture: lastPaidResizeGesture(currentWidth: lastPaidWidth)
+            )
         }
-        .font(.caption.bold())
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 1)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(Color.ledgerlyPrimaryText)
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32, alignment: .leading)
+        .background(Color.ledgerlyToolbar)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.ledgerlyDivider)
+                .frame(height: 1)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.ledgerlyDivider)
+                .frame(height: 1)
+        }
     }
 
-    private func columnResizeSlot<G: Gesture>(gesture: G) -> some View {
-        ZStack {
-            Color.clear.frame(width: 8, height: 16)
-            resizeHandle
-        }
-        .frame(width: 8, height: 16)
-        .contentShape(Rectangle())
-        .gesture(gesture)
+    private func resizableColumnHeader<G: Gesture>(
+        _ title: String,
+        width: CGFloat,
+        alignment: Alignment,
+        gesture: G
+    ) -> some View {
+        Text(title)
+            .frame(width: width, alignment: alignment)
+            .overlay(alignment: .trailing) {
+                resizeHandle
+                    .offset(x: 9)
+                    .gesture(gesture)
+            }
     }
 
     private var resizeHandle: some View {
-        HStack(spacing: 2) {
-            Capsule().fill(Color.secondary.opacity(0.38)).frame(width: 2, height: 12)
-            Capsule().fill(Color.secondary.opacity(0.38)).frame(width: 2, height: 12)
+        ZStack {
+            Color.clear
+                .frame(width: 18, height: 24)
+            Rectangle()
+                .fill(Color.ledgerlyDivider)
+                .frame(width: 1, height: 18)
         }
-        .frame(width: 16, height: 16)
+        .frame(width: 18, height: 24)
         .contentShape(Rectangle())
         .help("Drag to resize column")
     }
@@ -1375,6 +1626,20 @@ struct OverviewView: View {
                 dueDateColumnDragStartWidth = nil
             }
     }
+
+    private func lastPaidResizeGesture(currentWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if lastPaidColumnDragStartWidth == nil {
+                    lastPaidColumnDragStartWidth = currentWidth
+                }
+                guard let start = lastPaidColumnDragStartWidth else { return }
+                overviewLastPaidColumnWidth = Double(min(max(start + value.translation.width, 110), 240))
+            }
+            .onEnded { _ in
+                lastPaidColumnDragStartWidth = nil
+            }
+    }
 }
 
 struct DesktopBillRow: View {
@@ -1413,7 +1678,7 @@ struct DesktopBillRow: View {
             if amountsVisible {
                 Text(bill.amountDisplayText)
                     .fontWeight(.semibold)
-                    .frame(width: amountWidth, alignment: .trailing)
+                    .frame(width: amountWidth, alignment: .leading)
             }
 
             HStack(spacing: 9) {
@@ -1454,6 +1719,7 @@ struct DesktopBillRow: View {
         case "Subscriptions": return "play.rectangle.fill"
         case "Health": return "cross.case.fill"
         case "Education": return "graduationcap.fill"
+        case "Credit Cards": return "creditcard.fill"
         default: return "doc.text.fill"
         }
     }
@@ -2177,7 +2443,7 @@ struct IncomeView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(store.incomes.sorted { $0.nextDate < $1.nextDate }) { income in
+                        ForEach(store.incomes.sorted { $0.nextExpectedDate() < $1.nextExpectedDate() }) { income in
                             HStack(spacing: 14) {
                                 RoundedRectangle(cornerRadius: 11)
                                     .fill(Color(hex: income.colorHex).opacity(0.18))
@@ -2195,7 +2461,7 @@ struct IncomeView: View {
                                 Spacer()
                                 VStack(alignment: .trailing, spacing: 3) {
                                     Text(income.amount.currency).fontWeight(.bold)
-                                    Text("Next \(income.nextDate.formatted(date: .abbreviated, time: .omitted))")
+                                    Text("Next \(income.nextExpectedDate().formatted(date: .abbreviated, time: .omitted))")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -2235,7 +2501,9 @@ struct IncomeEditorView: View {
     @State private var name = ""
     @State private var amount = 0.0
     @State private var nextDate = Date()
-    @State private var frequency: BillFrequency = .monthly
+    @State private var frequency: IncomeSource.Frequency = .monthly
+    @State private var firstPayday = 15
+    @State private var secondPayday = 30
     @State private var notes = ""
     @State private var colorHex = "#58A66B"
 
@@ -2255,6 +2523,8 @@ struct IncomeEditorView: View {
                             amount: amount,
                             nextDate: nextDate,
                             frequency: frequency,
+                            firstPayday: firstPayday,
+                            secondPayday: secondPayday,
                             notes: notes,
                             colorHex: colorHex
                         )
@@ -2262,16 +2532,32 @@ struct IncomeEditorView: View {
                     dismiss()
                 }
                 .ledgerlyGlassButton(prominent: true)
-                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || amount <= 0)
+                .disabled(
+                    name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    amount <= 0 ||
+                    (frequency == .twiceMonthly && firstPayday == secondPayday)
+                )
             }
             .padding(20)
             Divider()
             Form {
                 TextField("Source name", text: $name)
-                TextField("Amount", value: $amount, format: .currency(code: Locale.current.currency?.identifier ?? "USD"))
-                DatePicker("Next expected date", selection: $nextDate, displayedComponents: .date)
+                TextField(
+                    frequency == .twiceMonthly ? "Amount per payment" : "Amount",
+                    value: $amount,
+                    format: .currency(code: Locale.current.currency?.identifier ?? "USD")
+                )
                 Picker("Repeats", selection: $frequency) {
-                    ForEach(BillFrequency.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(IncomeSource.Frequency.allCases) { Text($0.rawValue).tag($0) }
+                }
+                if frequency == .twiceMonthly {
+                    Stepper("First payday: \(firstPayday)", value: $firstPayday, in: 1...31)
+                    Stepper("Second payday: \(secondPayday)", value: $secondPayday, in: 1...31)
+                    Text("If a payday does not exist in a shorter month, Ledgerly uses the last day of that month.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    DatePicker("Next expected date", selection: $nextDate, displayedComponents: .date)
                 }
                 TextField("Notes", text: $notes, axis: .vertical)
                     .lineLimit(2...4)
@@ -2293,12 +2579,13 @@ struct IncomeEditorView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 500, height: 470)
+        .frame(width: 500, height: frequency == .twiceMonthly ? 560 : 470)
     }
 }
 
 struct ForecastView: View {
     @EnvironmentObject private var store: BillStore
+    @State private var selectedMonth = Date()
     private let months = (0..<12).compactMap {
         Calendar.current.date(byAdding: .month, value: $0, to: Date())
     }
@@ -2313,6 +2600,21 @@ struct ForecastView: View {
 
     private var maxTotal: Double { max(totals.max() ?? 1, 1) }
 
+    private var selectedBills: [Bill] {
+        store.bills
+            .filter { !$0.isArchived && $0.amountDue(in: selectedMonth) > 0 }
+            .sorted {
+                if $0.dueDate == $1.dueDate {
+                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+                return $0.dueDate < $1.dueDate
+            }
+    }
+
+    private var selectedTotal: Double {
+        selectedBills.reduce(0) { $0 + $1.amountDue(in: selectedMonth) }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -2323,21 +2625,88 @@ struct ForecastView: View {
 
                 HStack(alignment: .bottom, spacing: 12) {
                     ForEach(Array(months.enumerated()), id: \.offset) { index, month in
-                        VStack(spacing: 8) {
-                            Text(totals[index].currencyCompact)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            RoundedRectangle(cornerRadius: 7)
-                                .fill(index == 0 ? Color(hex: "#4E8FD3") : Color(hex: "#EDB28E"))
-                                .frame(height: max(8, 250 * totals[index] / maxTotal))
-                            Text(month.formatted(.dateTime.month(.narrow)))
-                                .font(.caption.bold())
+                        Button {
+                            selectedMonth = month
+                        } label: {
+                            VStack(spacing: 8) {
+                                Text(totals[index].currencyCompact)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                RoundedRectangle(cornerRadius: 7)
+                                    .fill(
+                                        Calendar.current.isDate(
+                                            selectedMonth,
+                                            equalTo: month,
+                                            toGranularity: .month
+                                        )
+                                            ? Color(hex: "#4E8FD3")
+                                            : Color(hex: "#EDB28E")
+                                    )
+                                    .frame(height: max(8, 250 * totals[index] / maxTotal))
+                                Text(month.formatted(.dateTime.month(.narrow)))
+                                    .font(.caption.bold())
+                            }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                         .frame(maxWidth: .infinity)
+                        .help("Show bills due in \(month.formatted(.dateTime.month(.wide).year()))")
                     }
                 }
                 .frame(height: 310, alignment: .bottom)
                 .padding(24)
+                .background(Color.ledgerlyReportCard, in: RoundedRectangle(cornerRadius: 18))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18).stroke(Color.ledgerlyDivider)
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(selectedMonth.formatted(.dateTime.month(.wide).year()))
+                                .font(.headline)
+                            Text("\(selectedBills.count) bill\(selectedBills.count == 1 ? "" : "s") due")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(selectedTotal.currency)
+                            .font(.title3.bold())
+                    }
+
+                    Divider()
+
+                    if selectedBills.isEmpty {
+                        Text("No bills are projected for this month.")
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 8)
+                    } else {
+                        ForEach(selectedBills) { bill in
+                            HStack(spacing: 12) {
+                                RoundedRectangle(cornerRadius: 7)
+                                    .fill(Color(hex: bill.colorHex).opacity(0.18))
+                                    .frame(width: 34, height: 34)
+                                    .overlay {
+                                        Circle()
+                                            .fill(Color(hex: bill.colorHex))
+                                            .frame(width: 9, height: 9)
+                                    }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(bill.name)
+                                        .fontWeight(.semibold)
+                                    Text("\(bill.category) · \(bill.frequency.displayText)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(bill.amountDue(in: selectedMonth).currency)
+                                    .fontWeight(.semibold)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+                .padding(22)
                 .background(Color.ledgerlyReportCard, in: RoundedRectangle(cornerRadius: 18))
                 .overlay {
                     RoundedRectangle(cornerRadius: 18).stroke(Color.ledgerlyDivider)
@@ -2648,6 +3017,7 @@ struct SettingsView: View {
     @AppStorage("showIncomeSummary") private var showIncomeSummary = true
     @AppStorage("passwordProtectionEnabled") private var passwordProtectionEnabled = false
     @State private var passwordAction: PasswordAction?
+    @State private var storageMoveError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -2711,6 +3081,14 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.ledgerlyWorkspace)
+        .alert("Couldn’t Move Data", isPresented: Binding(
+            get: { storageMoveError != nil },
+            set: { if !$0 { storageMoveError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(storageMoveError ?? "")
+        }
         .sheet(item: $passwordAction) { action in
             PasswordProtectionSheet(action: action) { isEnabled in
                 passwordProtectionEnabled = isEnabled
@@ -2850,10 +3228,18 @@ struct SettingsView: View {
     private var advancedSettings: some View {
         Group {
             SettingsGroup(title: "Data Storage") {
-                LabeledContent("Current location", value: "Application Support/Ledgerly")
+                LabeledContent("Current location") {
+                    Text(store.storageFolder.path)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(store.storageFolder.path)
+                }
                 HStack {
                     Button("Open Data Folder") {
-                        NSWorkspace.shared.open(ledgerlyDataFolder)
+                        NSWorkspace.shared.open(store.storageFolder)
+                    }
+                    Button("Move Data…") {
+                        chooseNewStorageLocation()
                     }
                     Spacer()
                     Text("Bills and attachments remain on this Mac.")
@@ -2893,16 +3279,30 @@ struct SettingsView: View {
             }
 
             SettingsGroup(title: "About") {
-                LabeledContent("Ledgerly", value: "Version 2.0.0")
+                LabeledContent("Ledgerly", value: "Version 2.0.2")
                 Text("A focused, private bill organizer for macOS.")
                     .foregroundStyle(.secondary)
             }
         }
     }
 
-    private var ledgerlyDataFolder: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("Ledgerly", isDirectory: true)
+    private func chooseNewStorageLocation() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a New Ledgerly Data Location"
+        panel.prompt = "Move Here"
+        panel.message = "Ledgerly will create a Ledgerly folder in the selected location."
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let selectedFolder = panel.url else { return }
+
+        do {
+            try store.moveStorage(to: selectedFolder)
+        } catch {
+            storageMoveError = error.localizedDescription
+        }
     }
 
     private func reminderTimeLabel(_ hour: Int) -> String {
@@ -3060,11 +3460,15 @@ struct BillEditorView: View {
     @State private var colorHex: String
     @State private var website: String
     @State private var notes: String
+    @State private var isReminderEnabled: Bool
     @State private var reminderDays: Int
     @State private var isAutoPay: Bool
 
-    private let categories = ["Home", "Utilities", "Transport", "Insurance", "Subscriptions", "Health", "Education", "Other"]
-    private let colors = ["#F2854A", "#E8B448", "#58A66B", "#4E8FD3", "#7B6AD8", "#D85F74"]
+    private let categories = ["Home", "Utilities", "Credit Cards", "Transport", "Insurance", "Subscriptions", "Health", "Education", "Other"]
+    private let colors = [
+        "#F2854A", "#E8B448", "#58A66B", "#4E8FD3", "#7B6AD8",
+        "#D85F74", "#2AA198", "#A66B3D", "#8E5EA2", "#64748B"
+    ]
 
     init(existingBill: Bill? = nil) {
         self.existingBill = existingBill
@@ -3080,6 +3484,7 @@ struct BillEditorView: View {
         _colorHex = State(initialValue: existingBill?.colorHex ?? "#F2854A")
         _website = State(initialValue: existingBill?.website ?? "")
         _notes = State(initialValue: existingBill?.notes ?? "")
+        _isReminderEnabled = State(initialValue: existingBill?.isReminderEnabled ?? true)
         _reminderDays = State(initialValue: existingBill?.reminderDays ?? savedReminderDays)
         _isAutoPay = State(initialValue: existingBill?.isAutoPay ?? false)
     }
@@ -3133,8 +3538,15 @@ struct BillEditorView: View {
 
                 Section("Payment") {
                     Toggle("Automatic payment", isOn: $isAutoPay)
-                    Stepper("Remind me \(reminderDays) day\(reminderDays == 1 ? "" : "s") before", value: $reminderDays, in: 0...30)
-                    TextField("Biller website (for example, example.com)", text: $website)
+                    Toggle("Reminder", isOn: $isReminderEnabled)
+                    if isReminderEnabled {
+                        Stepper(
+                            "Remind me \(reminderDays) day\(reminderDays == 1 ? "" : "s") before",
+                            value: $reminderDays,
+                            in: 0...30
+                        )
+                    }
+                    TextField("Biller website (example.com)", text: $website)
                     TextField("Notes", text: $notes, axis: .vertical)
                         .lineLimit(2...4)
                 }
@@ -3156,6 +3568,7 @@ struct BillEditorView: View {
             colorHex: colorHex,
             website: website,
             notes: notes,
+            isReminderEnabled: isReminderEnabled,
             reminderDays: reminderDays,
             isAutoPay: isAutoPay,
             payments: existingBill?.payments ?? [],
