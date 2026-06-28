@@ -9,7 +9,7 @@ an account or bank connection.
 ## Features
 
 - Overview for upcoming, overdue, paid, and archived bills
-- Weekly, monthly, quarterly, yearly, and one-time schedules
+- Weekly, biweekly, monthly, quarterly, yearly, and one-time schedules
 - Local notification reminders and configurable Due Soon badges
 - Payment history with confirmation numbers and attachments
 - Twelve-month bill forecast and monthly set-aside suggestions
@@ -26,12 +26,12 @@ an account or bank connection.
 
 ## Install
 
-1. Download `Ledgerly-2.0.2.dmg` from the
+1. Download `Ledgerly-2.1.dmg` from the
    [latest GitHub Release](https://github.com/YodaGuru/Ledgerly/releases/latest).
 2. Open the disk image.
 3. Drag Ledgerly into Applications.
 
-Ledgerly 2.0.2 is currently ad-hoc signed and not Apple-notarized. macOS may
+Ledgerly 2.1 is currently ad-hoc signed and not Apple-notarized. macOS may
 show a Gatekeeper warning when opening a downloaded build.
 
 ## Privacy
@@ -56,7 +56,7 @@ chmod +x build.sh
 ./build.sh
 ```
 
-The script creates the app and `Ledgerly-2.0.2.dmg`. It targets Apple silicon
+The script creates the app and `Ledgerly-2.1.dmg`. It targets Apple silicon
 and macOS 13 or later.
 
 ## Support and security
