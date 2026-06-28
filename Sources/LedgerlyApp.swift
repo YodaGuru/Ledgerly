@@ -54,6 +54,7 @@ enum PasswordKeychain {
 
 enum BillFrequency: String, Codable, CaseIterable, Identifiable {
     case weekly = "Weekly"
+    case biweekly = "Biweekly"
     case monthly = "Monthly"
     case quarterly = "Quarterly"
     case yearly = "Yearly"
@@ -63,7 +64,7 @@ enum BillFrequency: String, Codable, CaseIterable, Identifiable {
 
     var calendarComponent: Calendar.Component? {
         switch self {
-        case .weekly: return .weekOfYear
+        case .weekly, .biweekly: return .weekOfYear
         case .monthly: return .month
         case .quarterly: return .month
         case .yearly: return .year
@@ -72,7 +73,11 @@ enum BillFrequency: String, Codable, CaseIterable, Identifiable {
     }
 
     var calendarValue: Int {
-        self == .quarterly ? 3 : 1
+        switch self {
+        case .biweekly: return 2
+        case .quarterly: return 3
+        default: return 1
+        }
     }
 }
 
@@ -114,6 +119,7 @@ struct Payment: Identifiable, Codable, Hashable {
 struct IncomeSource: Identifiable, Codable, Hashable {
     enum Frequency: String, Codable, CaseIterable, Identifiable {
         case weekly = "Weekly"
+        case biweekly = "Biweekly"
         case twiceMonthly = "Twice monthly"
         case monthly = "Monthly"
         case quarterly = "Quarterly"
@@ -125,6 +131,7 @@ struct IncomeSource: Identifiable, Codable, Hashable {
         var displayText: String {
             switch self {
             case .weekly: return "Every week"
+            case .biweekly: return "Every other week"
             case .twiceMonthly: return "Twice monthly"
             case .monthly: return "Every month"
             case .quarterly: return "Every 3 months"
@@ -187,6 +194,8 @@ struct IncomeSource: Identifiable, Codable, Hashable {
         switch frequency {
         case .weekly:
             return amount * 4.33
+        case .biweekly:
+            return amount * 26 / 12
         case .twiceMonthly:
             return amount * 2
         case .monthly:
@@ -203,10 +212,22 @@ struct IncomeSource: Identifiable, Codable, Hashable {
     }
 
     func nextExpectedDate(from date: Date = Date()) -> Date {
-        guard frequency == .twiceMonthly else { return nextDate }
-
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: date)
+
+        if frequency == .biweekly {
+            var expectedDate = calendar.startOfDay(for: nextDate)
+            while expectedDate < today {
+                guard let next = calendar.date(byAdding: .weekOfYear, value: 2, to: expectedDate) else {
+                    return nextDate
+                }
+                expectedDate = next
+            }
+            return expectedDate
+        }
+
+        guard frequency == .twiceMonthly else { return nextDate }
+
         let days = [firstPayday, secondPayday].sorted()
 
         for monthOffset in 0...1 {
@@ -315,7 +336,12 @@ struct Bill: Identifiable, Codable, Hashable {
     var isPaidForCurrentCycle: Bool {
         let calendar = Calendar.current
         return payments.contains { payment in
-            calendar.isDate(payment.date, equalTo: dueDate, toGranularity: .month)
+            switch frequency {
+            case .weekly, .biweekly:
+                return calendar.isDate(payment.date, inSameDayAs: dueDate)
+            case .monthly, .quarterly, .yearly, .once:
+                return calendar.isDate(payment.date, equalTo: dueDate, toGranularity: .month)
+            }
         }
     }
 
@@ -363,15 +389,17 @@ struct Bill: Identifiable, Codable, Hashable {
         let months = calendar.dateComponents([.month], from: dueStart, to: start).month ?? 0
 
         switch frequency {
-        case .weekly:
+        case .weekly, .biweekly:
             guard let monthEnd = calendar.date(byAdding: .month, value: 1, to: start) else {
                 return 0
             }
+            let weekStride = frequency == .biweekly ? 2 : 1
             var occurrence = dueDate
             if occurrence < start {
                 let days = calendar.dateComponents([.day], from: occurrence, to: start).day ?? 0
-                let weeksToAdvance = max(0, (days + 6) / 7)
-                occurrence = calendar.date(byAdding: .weekOfYear, value: weeksToAdvance, to: occurrence) ?? occurrence
+                let daysPerCycle = weekStride * 7
+                let cyclesToAdvance = max(0, (days + daysPerCycle - 1) / daysPerCycle)
+                occurrence = calendar.date(byAdding: .weekOfYear, value: cyclesToAdvance * weekStride, to: occurrence) ?? occurrence
             }
 
             var count = 0
@@ -379,7 +407,7 @@ struct Bill: Identifiable, Codable, Hashable {
                 if occurrence >= start {
                     count += 1
                 }
-                guard let next = calendar.date(byAdding: .weekOfYear, value: 1, to: occurrence) else {
+                guard let next = calendar.date(byAdding: .weekOfYear, value: weekStride, to: occurrence) else {
                     break
                 }
                 occurrence = next
@@ -1100,7 +1128,7 @@ struct Sidebar: View {
             }
 
             VStack(spacing: 5) {
-                Text("Version 2.0.2")
+                Text("Version 2.1")
                     .font(.caption)
                     .foregroundStyle(Color.ledgerlySecondaryText)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -2543,7 +2571,7 @@ struct IncomeEditorView: View {
             Form {
                 TextField("Source name", text: $name)
                 TextField(
-                    frequency == .twiceMonthly ? "Amount per payment" : "Amount",
+                    (frequency == .biweekly || frequency == .twiceMonthly) ? "Amount per payment" : "Amount",
                     value: $amount,
                     format: .currency(code: Locale.current.currency?.identifier ?? "USD")
                 )
@@ -2620,7 +2648,7 @@ struct ForecastView: View {
             VStack(alignment: .leading, spacing: 22) {
                 Text("12-month forecast")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
-                Text("Plan ahead for monthly, quarterly, and annual bills.")
+                Text("Plan ahead for recurring and one-time bills.")
                     .foregroundStyle(.secondary)
 
                 HStack(alignment: .bottom, spacing: 12) {
@@ -3279,7 +3307,7 @@ struct SettingsView: View {
             }
 
             SettingsGroup(title: "About") {
-                LabeledContent("Ledgerly", value: "Version 2.0.2")
+                LabeledContent("Ledgerly", value: "Version 2.1")
                 Text("A focused, private bill organizer for macOS.")
                     .foregroundStyle(.secondary)
             }
@@ -3743,6 +3771,7 @@ extension BillFrequency {
     var displayText: String {
         switch self {
         case .weekly: return "Every week"
+        case .biweekly: return "Every other week"
         case .monthly: return "Every month"
         case .quarterly: return "Every 3 months"
         case .yearly: return "Every year"
