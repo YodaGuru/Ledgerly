@@ -1,4 +1,7 @@
 #!/bin/zsh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 YodaGuru
+
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"

@@ -9,7 +9,7 @@ Thanks for helping improve Ledgerly.
 - Do not use public issues for security vulnerabilities; follow
   [SECURITY.md](SECURITY.md).
 - By contributing, you agree that your contribution is licensed under the
-  repository's MIT License.
+  GNU General Public License v3.0 or later.
 
 ## Development
 
