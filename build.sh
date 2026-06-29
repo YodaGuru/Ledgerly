@@ -13,6 +13,7 @@ OUTPUT="$ROOT/../outputs"
 VERSION="2.1.1"
 DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 SDKROOT="$(DEVELOPER_DIR="$DEVELOPER_DIR" xcrun --sdk macosx --show-sdk-path)"
+swift_sources=("${(@f)$(find "$ROOT/Sources" -type f -name '*.swift' | sort)}")
 
 rm -rf "$BUILD"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$DMG_ROOT" "$ICON_BUILD" "$OUTPUT"
@@ -44,7 +45,7 @@ DEVELOPER_DIR="$DEVELOPER_DIR" xcrun swiftc \
   -framework LinkPresentation \
   -framework CoreImage \
   -framework UserNotifications \
-  "$ROOT/Sources/LedgerlyApp.swift" \
+  "${swift_sources[@]}" \
   -o "$APP/Contents/MacOS/Ledgerly"
 
 cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
