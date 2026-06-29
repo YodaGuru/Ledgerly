@@ -1131,7 +1131,7 @@ struct Sidebar: View {
             }
 
             VStack(spacing: 5) {
-                Text("Version 2.1")
+                Text("Version 2.1.1")
                     .font(.caption)
                     .foregroundStyle(Color.ledgerlySecondaryText)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -3310,7 +3310,7 @@ struct SettingsView: View {
             }
 
             SettingsGroup(title: "About") {
-                LabeledContent("Ledgerly", value: "Version 2.1")
+                LabeledContent("Ledgerly", value: "Version 2.1.1")
                 Text("A focused, private bill organizer for macOS.")
                     .foregroundStyle(.secondary)
             }
@@ -3790,7 +3790,11 @@ extension Bill {
         if calendar.isDateInToday(dueDate) { return "Due today" }
         if calendar.isDateInTomorrow(dueDate) { return "Due tomorrow" }
         if dueDate < calendar.startOfDay(for: Date()) {
-            let days = calendar.dateComponents([.day], from: dueDate, to: Date()).day ?? 0
+            let days = calendar.dateComponents(
+                [.day],
+                from: calendar.startOfDay(for: dueDate),
+                to: calendar.startOfDay(for: Date())
+            ).day ?? 0
             return "\(days) day\(days == 1 ? "" : "s") overdue"
         }
         let days = calendar.dateComponents(
