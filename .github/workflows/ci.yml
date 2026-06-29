@@ -25,6 +25,11 @@ jobs:
       - name: Type-check Ledgerly
         run: |
           SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          swift_sources=()
+          while IFS= read -r source; do
+            swift_sources+=("$source")
+          done < <(find Sources -type f -name '*.swift' | sort)
+
           xcrun swiftc \
             -parse-as-library \
             -typecheck \
@@ -34,5 +39,7 @@ jobs:
             -framework SwiftUI \
             -framework AppKit \
             -framework Security \
+            -framework LinkPresentation \
+            -framework CoreImage \
             -framework UserNotifications \
-            Sources/LedgerlyApp.swift
+            "${swift_sources[@]}"
