@@ -66,4 +66,5 @@ security-sensitive problems privately according to [SECURITY.md](SECURITY.md).
 
 ## License
 
-Ledgerly is proprietary software. See [LICENSE](LICENSE).
+Ledgerly is free software licensed under the GNU General Public License v3.0
+or later. See [LICENSE](LICENSE).

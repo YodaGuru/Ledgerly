@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 YodaGuru
+
 from PIL import Image
 from pathlib import Path
 import sys
