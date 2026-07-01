@@ -83,7 +83,7 @@ All notable changes to Ledgerly are documented here.
 - Improved totals so remaining balances are used where appropriate.
 - Improved release/build consistency across app metadata and documentation.
 
-### [2.1.1] - 2026-06-29
+## [2.1.1] - 2026-06-29
 
 - Fixed overdue bill labels so they show the correct number of calendar days overdue instead of sometimes showing 0 days overdue.
 
