@@ -102,7 +102,12 @@ struct Bill: Identifiable, Codable, Hashable {
     }
 
     var isPaidForCurrentCycle: Bool {
-        cycleRemainingAmount <= 0.005
+        guard hasKnownCycleAmount else { return false }
+        return cycleRemainingAmount <= 0.005
+    }
+
+    var hasKnownCycleAmount: Bool {
+        !isVariableAmount || amount > 0.005 || estimatedVariableAmount != nil
     }
 
     var cyclePaidAmount: Double {

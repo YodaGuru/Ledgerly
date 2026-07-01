@@ -554,6 +554,9 @@ final class BillStore: ObservableObject {
                 if bills[index].frequency == .once && !bills[index].payments.isEmpty {
                     break
                 }
+                if !bills[index].hasKnownCycleAmount {
+                    break
+                }
 
                 let paymentDate = bills[index].dueDate
                 bills[index].payments.append(
