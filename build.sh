@@ -10,7 +10,7 @@ APP="$BUILD/Ledgerly.app"
 DMG_ROOT="$BUILD/dmg"
 ICON_BUILD="$BUILD/IconAssets"
 OUTPUT="$ROOT/../outputs"
-VERSION="2.1.1"
+VERSION="3.0.0"
 DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 SDKROOT="$(DEVELOPER_DIR="$DEVELOPER_DIR" xcrun --sdk macosx --show-sdk-path)"
 swift_sources=("${(@f)$(find "$ROOT/Sources" -type f -name '*.swift' | sort)}")
@@ -22,16 +22,16 @@ DEVELOPER_DIR="$DEVELOPER_DIR" xcrun actool \
   --compile "$ICON_BUILD" \
   --platform macosx \
   --minimum-deployment-target 13.0 \
-  --app-icon icon \
+  --app-icon AppIcon \
   --standalone-icon-behavior all \
   --output-partial-info-plist "$ICON_BUILD/IconInfo.plist" \
   --warnings \
   --errors \
   --notices \
   --output-format human-readable-text \
-  "$ROOT/docs/images/icon.icon"
+  "$ROOT/docs/images/AppIcon.icon"
 cp "$ICON_BUILD/Assets.car" "$APP/Contents/Resources/Assets.car"
-cp "$ICON_BUILD/icon.icns" "$APP/Contents/Resources/icon.icns"
+cp "$ICON_BUILD/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 DEVELOPER_DIR="$DEVELOPER_DIR" xcrun swiftc \
   -parse-as-library \

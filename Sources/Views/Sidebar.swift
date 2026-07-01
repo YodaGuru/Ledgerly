@@ -54,21 +54,44 @@ struct Sidebar: View {
                     }
 
                     SidebarSection(title: "APP") {
+                        syncButton
                         sidebarButton(.settings)
                     }
                 }
                 .padding(.horizontal, 10)
             }
 
-            VStack(spacing: 5) {
-                Text("Version 2.1.1")
-                    .font(.caption)
-                    .foregroundStyle(Color.ledgerlySecondaryText)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(18)
+            Spacer(minLength: 18)
         }
+    }
+
+    private var syncButton: some View {
+        Button {
+            store.reloadFromDiskIfChanged(manual: true)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: store.syncStatusIcon)
+                    .font(.system(size: 16, weight: .medium))
+                    .frame(width: 22)
+                    .foregroundStyle(Color.ledgerlySecondaryText)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sync")
+                        .fontWeight(.medium)
+                    Text(store.syncStatusText)
+                        .font(.caption)
+                        .foregroundStyle(Color.ledgerlySecondaryText)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+            .foregroundStyle(Color.ledgerlyPrimaryText)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Check the Ledgerly data folder for synced changes.")
     }
 
     private func sidebarButton(_ item: SidebarItem) -> some View {
@@ -114,7 +137,7 @@ struct Sidebar: View {
             return nil
         }
 
-        let total = bills.reduce(0) { $0 + $1.amount }
+        let total = bills.reduce(0) { $0 + $1.cycleRemainingAmount }
 
         return showAmounts
             ? "\(bills.count) · \(total.currency)"

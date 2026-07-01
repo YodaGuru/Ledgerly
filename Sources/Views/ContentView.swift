@@ -11,8 +11,8 @@ import CoreImage
 struct ContentView: View {
     @EnvironmentObject private var store: BillStore
     @State private var selection: SidebarItem = .overview
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showingAddBill = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @AppStorage("passwordProtectionEnabled") private var passwordProtectionEnabled = false
     @State private var isLocked = false
 
@@ -22,24 +22,14 @@ struct ContentView: View {
                 Sidebar(selection: $selection)
                     .navigationSplitViewColumnWidth(min: 250, ideal: 250, max: 250)
             } detail: {
-                Group {
-                    switch selection {
-                    case .overview, .dueSoon, .dueMonth, .paidRecently, .archive:
-                        OverviewView(showingAddBill: $showingAddBill, filter: selection)
-                    case .forecast:
-                        ForecastView()
-                    case .history:
-                        PaymentHistoryView()
-                    case .income:
-                        IncomeView()
-                    case .settings:
-                        SettingsView()
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.ledgerlyWorkspace)
+                detailContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.ledgerlyWorkspace)
+                    .ignoresSafeArea(.container, edges: .top)
             }
             .navigationSplitViewStyle(.balanced)
+            .modifier(RemoveSidebarToggleModifier())
+            .background(SidebarToggleRemovalView().frame(width: 0, height: 0))
             .allowsHitTesting(!isLocked)
 
             if isLocked {
@@ -86,12 +76,87 @@ struct ContentView: View {
             store.updateDockBadge()
             lockIfNeeded()
         }
+        .onChange(of: columnVisibility) { newValue in
+            if newValue != .all {
+                columnVisibility = .all
+            }
+        }
     }
 
     private func lockIfNeeded() {
         if passwordProtectionEnabled && PasswordKeychain.hasPassword {
             showingAddBill = false
             isLocked = true
+        }
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        switch selection {
+        case .overview, .dueSoon, .dueMonth, .paidRecently, .archive:
+            OverviewView(showingAddBill: $showingAddBill, filter: selection)
+        case .forecast:
+            ForecastView()
+        case .history:
+            PaymentHistoryView()
+        case .income:
+            IncomeView()
+        case .settings:
+            SettingsView()
+        }
+    }
+}
+
+private struct RemoveSidebarToggleModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 14.0, *) {
+            content.toolbar(removing: .sidebarToggle)
+        } else {
+            content
+        }
+    }
+}
+
+private struct SidebarToggleRemovalView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        removeSidebarToggleSoon(from: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        removeSidebarToggleSoon(from: nsView)
+    }
+
+    private func removeSidebarToggleSoon(from view: NSView) {
+        let delays: [TimeInterval] = [0, 0.15, 0.35, 0.75, 1.25]
+
+        for delay in delays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                Self.removeSidebarToggle(from: view.window)
+            }
+        }
+    }
+
+    private static func removeSidebarToggle(from window: NSWindow?) {
+        guard let window else { return }
+
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+
+        guard let toolbar = window.toolbar else { return }
+
+        toolbar.allowsUserCustomization = false
+
+        for index in toolbar.items.indices.reversed() {
+            let rawIdentifier = toolbar.items[index].itemIdentifier.rawValue.lowercased()
+            if rawIdentifier.contains("sidebar") || rawIdentifier.contains("toggle") {
+                toolbar.removeItem(at: index)
+            }
+        }
+
+        if toolbar.items.isEmpty {
+            window.toolbar = nil
         }
     }
 }

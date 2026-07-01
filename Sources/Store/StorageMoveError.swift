@@ -12,6 +12,7 @@ enum StorageMoveError: LocalizedError {
     case destinationNotEmpty
     case invalidDestination
     case verificationFailed
+    case iCloudDriveUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -21,6 +22,8 @@ enum StorageMoveError: LocalizedError {
             return "Choose a location outside the current Ledgerly data folder."
         case .verificationFailed:
             return "Ledgerly could not verify the copied data, so the current storage location was left unchanged."
+        case .iCloudDriveUnavailable:
+            return "Ledgerly could not find iCloud Drive. Make sure iCloud Drive is enabled on this Mac, then try again."
         }
     }
 }

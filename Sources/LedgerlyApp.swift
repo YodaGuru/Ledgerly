@@ -16,7 +16,10 @@ struct LedgerlyApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
-                .frame(minWidth: 1180, minHeight: 720)
+                .frame(minWidth: 920, minHeight: 640)
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    store.reloadFromDiskIfChanged()
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .commands {

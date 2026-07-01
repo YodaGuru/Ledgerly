@@ -8,28 +8,57 @@ import Security
 import LinkPresentation
 import CoreImage
 
+enum PaymentLoggingMode: String {
+    case full
+    case partial
+
+    var title: String {
+        switch self {
+        case .full: return "Log payment"
+        case .partial: return "Log partial payment"
+        }
+    }
+
+    var actionTitle: String {
+        switch self {
+        case .full: return "Mark Paid"
+        case .partial: return "Log Partial Payment"
+        }
+    }
+}
+
 struct PaymentView: View {
     @EnvironmentObject private var store: BillStore
     @Environment(\.dismiss) private var dismiss
     let bill: Bill
+    let mode: PaymentLoggingMode
     @State private var amount: Double
     @State private var confirmation = ""
+    @State private var notes = ""
     @State private var attachmentURLs: [URL] = []
     @State private var attachmentError: String?
 
-    init(bill: Bill) {
+    init(bill: Bill, mode: PaymentLoggingMode = .full) {
         self.bill = bill
-        _amount = State(initialValue: bill.amount)
+        self.mode = mode
+        _amount = State(initialValue: mode == .full ? bill.cycleRemainingAmount : min(25, bill.cycleRemainingAmount))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Log payment")
+            Text(mode.title)
                 .font(.title2.bold())
             Text(bill.name)
                 .font(.headline)
+            if bill.hasPartialPaymentForCurrentCycle {
+                Text("\(bill.cyclePaidAmount.currency) paid · \(bill.cycleRemainingAmount.currency) remaining")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             TextField("Amount", value: $amount, format: .currency(code: Locale.current.currency?.identifier ?? "USD"))
             TextField("Confirmation number (optional)", text: $confirmation)
+            TextField("Notes (optional)", text: $notes, axis: .vertical)
+                .lineLimit(2...4)
 
             VStack(alignment: .leading, spacing: 9) {
                 HStack {
@@ -68,13 +97,13 @@ struct PaymentView: View {
                 }
             }
 
-            Text("The next due date will be calculated automatically.")
+            Text(mode == .full ? "The next due date will be calculated automatically." : "The bill will stay due until the remaining balance is paid.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                Button("Mark Paid") {
+                Button(mode.actionTitle) {
                     var copiedAttachments: [BillAttachment] = []
                     do {
                         for url in attachmentURLs {
@@ -90,7 +119,9 @@ struct PaymentView: View {
                         bill,
                         amount: amount,
                         confirmation: confirmation,
-                        attachments: copiedAttachments
+                        notes: notes,
+                        attachments: copiedAttachments,
+                        advancesDueDate: mode == .full
                     )
                     dismiss()
                 }

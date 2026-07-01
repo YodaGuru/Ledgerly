@@ -8,6 +8,12 @@ import Security
 import LinkPresentation
 import CoreImage
 
+private struct PaymentRequest: Identifiable {
+    let id = UUID()
+    let bill: Bill
+    let mode: PaymentLoggingMode
+}
+
 struct OverviewView: View {
     @EnvironmentObject private var store: BillStore
     @Binding var showingAddBill: Bool
@@ -22,13 +28,15 @@ struct OverviewView: View {
     @AppStorage("overviewLastPaidColumnWidth") private var overviewLastPaidColumnWidth = 140.0
     @State private var selectedBillID: UUID?
     @State private var editingBill: Bill?
-    @State private var payingBill: Bill?
+    @State private var paymentRequest: PaymentRequest?
     @State private var billPendingDeletion: Bill?
     @State private var searchText = ""
     @State private var nameColumnDragStartWidth: CGFloat?
     @State private var amountColumnDragStartWidth: CGFloat?
     @State private var dueDateColumnDragStartWidth: CGFloat?
     @State private var lastPaidColumnDragStartWidth: CGFloat?
+    @State private var horizontalScrollOffset: CGFloat = 0
+    @State private var horizontalDragStartOffset: CGFloat?
 
     private var visibleBills: [Bill] {
         let calendar = Calendar.current
@@ -65,94 +73,116 @@ struct OverviewView: View {
     var body: some View {
         GeometryReader { geometry in
             let compact = geometry.size.width < 900
-            let minWidth: CGFloat = compact ? 300 : 260
-            let maxWidth: CGFloat = compact ? 340 : min(560, max(320, geometry.size.width * 0.42))
-            let sideWidth: CGFloat = min(max(CGFloat(overviewRightPaneWidth), minWidth), maxWidth)
+            let minimumListWidth: CGFloat = 420
+            let preferredSideWidth: CGFloat = min(max(CGFloat(overviewRightPaneWidth), 280), 340)
+            let dividerWidth: CGFloat = 10
+            let showSidePane = !compact && geometry.size.width >= minimumListWidth + preferredSideWidth + dividerWidth
+            let sideWidth: CGFloat = showSidePane ? min(preferredSideWidth, max(280, geometry.size.width - minimumListWidth - dividerWidth)) : 0
             let amountsVisible = showAmounts
-            let nameWidth: CGFloat = min(max(CGFloat(overviewNameColumnWidth), 190), 420)
-            let amountWidth: CGFloat = min(max(CGFloat(overviewAmountColumnWidth), 90), 180)
-            let dueDateWidth: CGFloat = min(max(CGFloat(overviewDueDateColumnWidth), 120), 240)
-            let lastPaidWidth: CGFloat = min(max(CGFloat(overviewLastPaidColumnWidth), 110), 240)
-            let dividerWidth: CGFloat = compact ? 1 : 10
-            let listPaneWidth = max(1, geometry.size.width - sideWidth - dividerWidth)
-            let tableWidth = max(
-                listPaneWidth,
-                42 + nameWidth + (amountsVisible ? amountWidth + 8 : 0)
-                    + dueDateWidth + lastPaidWidth + 72
-            )
+            let activeDividerWidth: CGFloat = showSidePane ? dividerWidth : 1
+            let listPaneWidth = max(1, geometry.size.width - sideWidth - activeDividerWidth)
+            let preferredNameWidth: CGFloat = min(max(CGFloat(overviewNameColumnWidth), 190), 420)
+            let preferredAmountWidth: CGFloat = min(max(CGFloat(overviewAmountColumnWidth), 90), 180)
+            let preferredDueDateWidth: CGFloat = min(max(CGFloat(overviewDueDateColumnWidth), 120), 240)
+            let preferredLastPaidWidth: CGFloat = min(max(CGFloat(overviewLastPaidColumnWidth), 110), 240)
+            let columnSpacing = CGFloat(amountsVisible ? 4 : 3) * 8
+            let fixedColumnWidth = 42 + (amountsVisible ? 0 : 0) + columnSpacing
+            let availableColumnWidth = max(1, listPaneWidth - 40 - fixedColumnWidth)
+            let preferredFlexibleWidth = preferredNameWidth +
+                (amountsVisible ? preferredAmountWidth : 0) +
+                preferredDueDateWidth +
+                preferredLastPaidWidth
+            let compression = min(1, availableColumnWidth / max(preferredFlexibleWidth, 1))
+            let nameWidth: CGFloat = max(130, preferredNameWidth * compression)
+            let amountWidth: CGFloat = amountsVisible ? max(76, preferredAmountWidth * compression) : 0
+            let dueDateWidth: CGFloat = max(118, preferredDueDateWidth * compression)
+            let lastPaidWidth: CGFloat = max(82, preferredLastPaidWidth * compression)
+            let columnContentWidth = 42 + nameWidth + (amountsVisible ? amountWidth : 0)
+                + dueDateWidth + lastPaidWidth + columnSpacing
+            let tableWidth = max(listPaneWidth, columnContentWidth + 40)
+            let rowWidth = max(1, tableWidth - 20)
+            let maxHorizontalOffset = max(0, tableWidth - listPaneWidth)
 
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
                     listToolbar(compact: compact)
-                    ScrollView(.horizontal) {
-                        VStack(spacing: 0) {
-                            columnHeader(
-                                compact: compact,
-                                amountsVisible: amountsVisible,
-                                nameWidth: nameWidth,
-                                amountWidth: amountWidth,
-                                dueDateWidth: dueDateWidth,
-                                lastPaidWidth: lastPaidWidth
-                            )
-                            if visibleBills.isEmpty {
-                                EmptyState(
-                                    title: "No bills here",
-                                    message: "Try another section or add a new bill.",
-                                    icon: filter.icon
+                    VStack(spacing: 0) {
+                        ZStack(alignment: .topLeading) {
+                            VStack(spacing: 0) {
+                                columnHeader(
+                                    compact: compact,
+                                    amountsVisible: amountsVisible,
+                                    nameWidth: nameWidth,
+                                    amountWidth: amountWidth,
+                                    dueDateWidth: dueDateWidth,
+                                    lastPaidWidth: lastPaidWidth
                                 )
-                            } else {
-                                ScrollView(.vertical) {
-                                    ZStack(alignment: .top) {
-                                        Color.clear
-                                            .contentShape(Rectangle())
-                                            .onTapGesture { selectedBillID = nil }
+                                if visibleBills.isEmpty {
+                                    EmptyState(
+                                        title: "No bills here",
+                                        message: "Try another section or add a new bill.",
+                                        icon: filter.icon
+                                    )
+                                } else {
+                                    ScrollView(.vertical) {
+                                        ZStack(alignment: .top) {
+                                            Color.clear
+                                                .contentShape(Rectangle())
+                                                .onTapGesture { selectedBillID = nil }
 
-                                        LazyVStack(spacing: 2) {
-                                            ForEach(visibleBills) { bill in
-                                                Button {
-                                                    selectedBillID = bill.id
-                                                } label: {
-                                                    DesktopBillRow(
-                                                        bill: bill,
-                                                        isSelected: bill.id == selectedBill?.id,
+                                            LazyVStack(spacing: 2) {
+                                                ForEach(visibleBills) { bill in
+                                                    desktopBillButton(
+                                                        bill,
                                                         compact: compact,
                                                         amountsVisible: amountsVisible,
                                                         nameWidth: nameWidth,
                                                         amountWidth: amountWidth,
                                                         dueDateWidth: dueDateWidth,
-                                                        lastPaidWidth: lastPaidWidth
+                                                        lastPaidWidth: lastPaidWidth,
+                                                        rowWidth: rowWidth
                                                     )
                                                 }
-                                                .buttonStyle(.plain)
-                                                .contextMenu {
-                                                    if bill.isArchived {
-                                                        Button("Unarchive") { store.unarchive(bill) }
-                                                        Button("Delete Bill…", role: .destructive) { billPendingDeletion = bill }
-                                                    } else {
-                                                        Button("Edit Bill") { editingBill = bill }
-                                                        Button("Log Payment") { payingBill = bill }
-                                                        Divider()
-                                                        Button("Archive") { store.archive(bill) }
-                                                        Button("Delete Bill…", role: .destructive) { billPendingDeletion = bill }
-                                                    }
-                                                }
                                             }
+                                            .padding(10)
+                                            .frame(width: rowWidth, alignment: .topLeading)
                                         }
-                                        .padding(10)
+                                        .frame(width: rowWidth, alignment: .topLeading)
+                                        .frame(minHeight: geometry.size.height - 125, alignment: .topLeading)
                                     }
-                                    .frame(maxWidth: .infinity, minHeight: geometry.size.height - 105, alignment: .top)
                                 }
                             }
+                            .frame(width: tableWidth, height: geometry.size.height - (maxHorizontalOffset > 0 ? 72 : 54), alignment: .top)
+                            .offset(x: -min(horizontalScrollOffset, maxHorizontalOffset))
                         }
-                        .frame(width: tableWidth, height: geometry.size.height - 54, alignment: .top)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .clipped()
+                        .gesture(horizontalTableDragGesture(maxOffset: maxHorizontalOffset))
+
+                        if maxHorizontalOffset > 0 {
+                            HorizontalTableScrollBar(
+                                offset: $horizontalScrollOffset,
+                                maxOffset: maxHorizontalOffset
+                            )
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 5)
+                            .background(Color.ledgerlyListSurface)
+                            .overlay(alignment: .top) {
+                                Rectangle()
+                                    .fill(Color.ledgerlyDivider)
+                                    .frame(height: 1)
+                            }
+                        }
                     }
-                    .scrollIndicators(.visible)
+                    .onChange(of: maxHorizontalOffset) { newValue in
+                        horizontalScrollOffset = min(horizontalScrollOffset, newValue)
+                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity)
                 .background(Color.ledgerlyListSurface)
 
-                if compact {
+                if !showSidePane {
                     Color.clear.frame(width: 1)
                 } else {
                     Rectangle()
@@ -168,22 +198,25 @@ struct OverviewView: View {
                             DragGesture(minimumDistance: 0)
                                 .onChanged { value in
                                     let proposed = sideWidth - value.translation.width
-                                    overviewRightPaneWidth = Double(min(max(proposed, minWidth), maxWidth))
+                                    overviewRightPaneWidth = Double(min(max(proposed, 280), 340))
                                 }
                         )
                 }
 
-                if let bill = selectedBill {
-                    BillInspector(
+                if showSidePane {
+                    if let bill = selectedBill {
+                        BillInspector(
                         bill: bill,
-                        onPay: { payingBill = bill },
+                        onPay: { paymentRequest = PaymentRequest(bill: bill, mode: .full) },
+                        onPartialPay: { paymentRequest = PaymentRequest(bill: bill, mode: .partial) },
                         onEdit: { editingBill = bill },
                         onClose: { selectedBillID = nil }
                     )
-                    .frame(width: sideWidth)
-                } else {
-                    MonthlyCalendarPanel(bills: visibleBills)
                         .frame(width: sideWidth)
+                    } else {
+                        MonthlyCalendarPanel(bills: store.bills.filter { !$0.isArchived })
+                            .frame(width: sideWidth)
+                    }
                 }
             }
         }
@@ -192,8 +225,8 @@ struct OverviewView: View {
             BillEditorView(existingBill: bill)
                 .environmentObject(store)
         }
-        .sheet(item: $payingBill) { bill in
-            PaymentView(bill: bill)
+        .sheet(item: $paymentRequest) { request in
+            PaymentView(bill: request.bill, mode: request.mode)
                 .environmentObject(store)
         }
         .alert("Delete Bill?", isPresented: deleteBillAlertBinding, presenting: billPendingDeletion) { bill in
@@ -212,6 +245,48 @@ struct OverviewView: View {
         }
         .onChange(of: filter) { _ in
             selectedBillID = nil
+        }
+    }
+
+    private func desktopBillButton(
+        _ bill: Bill,
+        compact: Bool,
+        amountsVisible: Bool,
+        nameWidth: CGFloat,
+        amountWidth: CGFloat,
+        dueDateWidth: CGFloat,
+        lastPaidWidth: CGFloat,
+        rowWidth: CGFloat
+    ) -> some View {
+        Button {
+            selectedBillID = bill.id
+        } label: {
+            DesktopBillRow(
+                bill: bill,
+                isSelected: bill.id == selectedBill?.id,
+                compact: compact,
+                amountsVisible: amountsVisible,
+                nameWidth: nameWidth,
+                amountWidth: amountWidth,
+                dueDateWidth: dueDateWidth,
+                lastPaidWidth: lastPaidWidth,
+                rowWidth: rowWidth
+            )
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if bill.isArchived {
+                Button("Unarchive") { store.unarchive(bill) }
+                Button("Delete Bill…", role: .destructive) { billPendingDeletion = bill }
+            } else {
+                Button("Edit Bill") { editingBill = bill }
+                Button("Log Payment") { paymentRequest = PaymentRequest(bill: bill, mode: .full) }
+                Button("Log Partial Payment") { paymentRequest = PaymentRequest(bill: bill, mode: .partial) }
+                    .disabled(bill.status == .paid)
+                Divider()
+                Button("Archive") { store.archive(bill) }
+                Button("Delete Bill…", role: .destructive) { billPendingDeletion = bill }
+            }
         }
     }
 
@@ -399,8 +474,23 @@ struct OverviewView: View {
                 lastPaidColumnDragStartWidth = nil
             }
     }
+
+    private func horizontalTableDragGesture(maxOffset: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                if horizontalDragStartOffset == nil {
+                    horizontalDragStartOffset = horizontalScrollOffset
+                }
+                guard let start = horizontalDragStartOffset else { return }
+                horizontalScrollOffset = min(max(start - value.translation.width, 0), maxOffset)
+            }
+            .onEnded { _ in
+                horizontalDragStartOffset = nil
+            }
+    }
 }
 struct DesktopBillRow: View {
+    @EnvironmentObject private var store: BillStore
     let bill: Bill
     let isSelected: Bool
     let compact: Bool
@@ -409,17 +499,18 @@ struct DesktopBillRow: View {
     let amountWidth: CGFloat
     let dueDateWidth: CGFloat
     let lastPaidWidth: CGFloat
+    let rowWidth: CGFloat
     @AppStorage("showAmounts") private var showAmounts = true
+    @AppStorage("showBillerWebsiteIcons") private var showBillerWebsiteIcons = false
 
     var body: some View {
         HStack(spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(hex: bill.colorHex).opacity(0.16))
-                Image(systemName: categoryIcon)
-                    .foregroundStyle(Color(hex: bill.colorHex))
-            }
-            .frame(width: 42, height: 42)
+            BillListIcon(
+                bill: bill,
+                categoryIcon: categoryIcon,
+                useWebsiteIcon: showBillerWebsiteIcons
+            )
+            .environmentObject(store)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(bill.name)
@@ -434,14 +525,14 @@ struct DesktopBillRow: View {
             .frame(width: nameWidth, alignment: .leading)
 
             if amountsVisible {
-                Text(bill.amountDisplayText)
+                Text(bill.cycleBalanceDisplayText)
                     .fontWeight(.semibold)
                     .frame(width: amountWidth, alignment: .leading)
             }
 
             HStack(spacing: 9) {
                 Capsule()
-                    .fill(bill.status.color)
+                    .fill(bill.dueDateColor)
                     .frame(width: 8, height: 30)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(bill.dueLabel)
@@ -460,6 +551,7 @@ struct DesktopBillRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .frame(width: rowWidth, alignment: .leading)
         .foregroundStyle(isSelected ? Color.white : Color.primary)
         .background(
             isSelected ? Color(hex: "#4E8FD3") : Color.clear,
@@ -482,21 +574,176 @@ struct DesktopBillRow: View {
         }
     }
 }
+private struct HorizontalTableScrollBar: View {
+    @Binding var offset: CGFloat
+    let maxOffset: CGFloat
+
+    var body: some View {
+        GeometryReader { geometry in
+            let thumbWidth = max(54, min(geometry.size.width, geometry.size.width * 0.34))
+            let travel = max(1, geometry.size.width - thumbWidth)
+            let progress = maxOffset <= 0 ? 0 : min(max(offset / maxOffset, 0), 1)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.ledgerlyDivider.opacity(0.45))
+                    .frame(height: 7)
+
+                Capsule()
+                    .fill(Color.ledgerlySecondaryText.opacity(0.78))
+                    .frame(width: thumbWidth, height: 7)
+                    .offset(x: travel * progress)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let next = min(max(value.location.x - thumbWidth / 2, 0), travel)
+                        offset = min(maxOffset, max(0, (next / travel) * maxOffset))
+                    }
+            )
+        }
+        .frame(height: 14)
+        .help("Drag to view more bill columns.")
+    }
+}
+private struct BillListIcon: View {
+    @EnvironmentObject private var store: BillStore
+    let bill: Bill
+    let categoryIcon: String
+    let useWebsiteIcon: Bool
+    @State private var customLogoImage: NSImage?
+    @State private var websiteBrand: WebsiteBrandAsset?
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(backgroundColor)
+
+            if let customLogoImage {
+                Image(nsImage: customLogoImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 42, height: 42)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            } else if useWebsiteIcon, let websiteBrand {
+                Image(nsImage: websiteBrand.image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 42, height: 42)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            } else {
+                Image(systemName: categoryIcon)
+                    .foregroundStyle(Color(hex: bill.colorHex))
+            }
+        }
+        .frame(width: 42, height: 42)
+        .task(id: taskID) {
+            await loadIconAssets()
+        }
+        .onChange(of: useWebsiteIcon) { _ in
+            Task {
+                await loadIconAssets()
+            }
+        }
+    }
+
+    private var backgroundColor: Color {
+        if customLogoImage != nil {
+            return Color.ledgerlyToolbar
+        }
+        if useWebsiteIcon, let accent = websiteBrand?.accent {
+            return accent.opacity(0.18)
+        }
+        return Color(hex: bill.colorHex).opacity(0.16)
+    }
+
+    private var taskID: String {
+        "\(bill.customLogo?.storedName ?? "none")-\(useWebsiteIcon)-\(bill.websiteURL?.absoluteString ?? "")"
+    }
+
+    private func loadIconAssets() async {
+        customLogoImage = store.customLogoImage(for: bill)
+        guard customLogoImage == nil else {
+            websiteBrand = nil
+            return
+        }
+        guard useWebsiteIcon, let websiteURL = bill.websiteURL else {
+            websiteBrand = nil
+            return
+        }
+        websiteBrand = await store.websiteBrand(for: websiteURL)
+    }
+}
 struct MonthlyCalendarPanel: View {
     @EnvironmentObject private var store: BillStore
     let bills: [Bill]
     @State private var month = Date()
+    @State private var selectedDate: Date?
+    @State private var scope: CalendarBillScope = .fullMonth
     @AppStorage("incomeEnabled") private var incomeEnabled = true
     @AppStorage("showIncomeSummary") private var showIncomeSummary = true
 
+    private var calendar: Calendar {
+        Calendar.current
+    }
+
     private var days: [Date?] {
-        let calendar = Calendar.current
         let start = calendar.date(from: calendar.dateComponents([.year, .month], from: month))!
         let range = calendar.range(of: .day, in: .month, for: start)!
         let leading = Array<Date?>(repeating: nil, count: calendar.component(.weekday, from: start) - 1)
         return leading + range.compactMap {
             calendar.date(byAdding: .day, value: $0 - 1, to: start)
         }.map(Optional.some)
+    }
+
+    private var monthBills: [Bill] {
+        bills
+            .filter { calendar.isDate($0.dueDate, equalTo: month, toGranularity: .month) }
+            .sorted { $0.dueDate < $1.dueDate }
+    }
+
+    private var selectedBills: [Bill] {
+        guard let selectedDate else { return [] }
+        return bills
+            .filter { calendar.isDate($0.dueDate, inSameDayAs: selectedDate) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var nextPayDate: Date? {
+        guard incomeEnabled, !store.incomes.isEmpty else { return nil }
+        return store.incomes
+            .map { $0.nextExpectedDate() }
+            .min()
+    }
+
+    private var scopedBills: [Bill] {
+        guard scope == .untilNextPay, let nextPayDate else { return monthBills }
+        let today = calendar.startOfDay(for: Date())
+        let end = calendar.startOfDay(for: nextPayDate)
+        return bills
+            .filter {
+                let dueDay = calendar.startOfDay(for: $0.dueDate)
+                return dueDay >= today && dueDay <= end
+            }
+            .sorted { $0.dueDate < $1.dueDate }
+    }
+
+    private var listTitle: String {
+        guard let selectedDate else { return "Due this month" }
+        return selectedDate.formatted(.dateTime.month(.wide).day())
+    }
+
+    private var listedBills: [Bill] {
+        selectedDate == nil ? scopedBills : selectedBills
+    }
+
+    private var summaryStartDate: Date {
+        scope == .untilNextPay ? Date() : month
+    }
+
+    private var summaryEndDate: Date? {
+        scope == .untilNextPay ? nextPayDate : nil
     }
 
     var body: some View {
@@ -511,20 +758,23 @@ struct MonthlyCalendarPanel: View {
                 }
                 Spacer()
                 Button {
-                    month = Calendar.current.date(byAdding: .month, value: -1, to: month)!
+                    month = calendar.date(byAdding: .month, value: -1, to: month)!
+                    selectedDate = nil
                 } label: {
                     Image(systemName: "chevron.left")
                 }
                 .buttonStyle(.borderless)
                 Button {
                     month = Date()
+                    selectedDate = nil
                 } label: {
                     Circle().frame(width: 7, height: 7)
                 }
                 .buttonStyle(.borderless)
                 .help("Current Month")
                 Button {
-                    month = Calendar.current.date(byAdding: .month, value: 1, to: month)!
+                    month = calendar.date(byAdding: .month, value: 1, to: month)!
+                    selectedDate = nil
                 } label: {
                     Image(systemName: "chevron.right")
                 }
@@ -544,26 +794,34 @@ struct MonthlyCalendarPanel: View {
 
                 ForEach(Array(days.enumerated()), id: \.offset) { _, day in
                     if let day {
-                        VStack(spacing: 3) {
-                            Text(day.formatted(.dateTime.day()))
-                                .font(.caption.weight(Calendar.current.isDateInToday(day) ? .bold : .regular))
-                                .foregroundStyle(Calendar.current.isDateInToday(day) ? Color.white : Color.primary)
-                                .frame(width: 27, height: 27)
-                                .background(
-                                    Calendar.current.isDateInToday(day) ? Color(hex: "#4E8FD3") : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 7)
-                                )
-                            HStack(spacing: 2) {
-                                ForEach(bills.filter {
-                                    Calendar.current.isDate($0.dueDate, inSameDayAs: day)
-                                }.prefix(2)) { bill in
-                                    Circle()
-                                        .fill(Color(hex: bill.colorHex))
-                                        .frame(width: 5, height: 5)
+                        Button {
+                            selectedDate = day
+                        } label: {
+                            VStack(spacing: 3) {
+                                let isSelected = selectedDate.map { calendar.isDate($0, inSameDayAs: day) } ?? false
+                                let isToday = calendar.isDateInToday(day)
+                                Text(day.formatted(.dateTime.day()))
+                                    .font(.caption.weight(isToday || isSelected ? .bold : .regular))
+                                    .foregroundStyle(isToday || isSelected ? Color.white : Color.primary)
+                                    .frame(width: 27, height: 27)
+                                    .background(
+                                        isSelected ? Color(hex: "#7B6AD8") : (isToday ? Color(hex: "#4E8FD3") : Color.clear),
+                                        in: RoundedRectangle(cornerRadius: 7)
+                                    )
+                                HStack(spacing: 2) {
+                                    ForEach(bills.filter {
+                                        calendar.isDate($0.dueDate, inSameDayAs: day)
+                                    }.prefix(3)) { bill in
+                                        Circle()
+                                            .fill(Color(hex: bill.colorHex))
+                                            .frame(width: 5, height: 5)
+                                    }
                                 }
+                                .frame(height: 5)
                             }
-                            .frame(height: 5)
                         }
+                        .buttonStyle(.plain)
+                        .help("Show bills due on \(day.formatted(date: .abbreviated, time: .omitted))")
                     } else {
                         Color.clear.frame(height: 35)
                     }
@@ -576,71 +834,157 @@ struct MonthlyCalendarPanel: View {
                 .padding(.top, 20)
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("This month")
-                    .font(.headline)
-                let monthBills = bills.filter {
-                    Calendar.current.isDate($0.dueDate, equalTo: month, toGranularity: .month)
+                HStack {
+                    Text(listTitle)
+                        .font(.headline)
+                    Spacer()
+                    if selectedDate != nil {
+                        Button("Show month") {
+                            selectedDate = nil
+                        }
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                    }
                 }
-                if monthBills.isEmpty {
-                    Text("No bills due in this month.")
+
+                if selectedDate == nil {
+                    Picker("Bill range", selection: $scope) {
+                        ForEach(CalendarBillScope.allCases) { scope in
+                            Text(scope.rawValue).tag(scope)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .help("Choose whether this panel shows the full month or only bills due before the next expected income.")
+                }
+
+                if scope == .untilNextPay, selectedDate == nil, let nextPayDate {
+                    Text("Through \(nextPayDate.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if listedBills.isEmpty {
+                    Text(emptyBillsMessage)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(monthBills.prefix(5)) { bill in
-                        HStack {
-                            Circle()
-                                .fill(Color(hex: bill.colorHex))
-                                .frame(width: 8, height: 8)
-                            Text(bill.name)
-                                .lineLimit(1)
-                            Spacer()
-                            Text(bill.dueDate.formatted(.dateTime.day()))
-                                .foregroundStyle(.secondary)
+                    ScrollView {
+                        LazyVStack(spacing: 8) {
+                            ForEach(listedBills) { bill in
+                                HStack(spacing: 8) {
+                                    Circle()
+                                        .fill(Color(hex: bill.colorHex))
+                                        .frame(width: 8, height: 8)
+                                    Text(bill.name)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(selectedDate == nil ? bill.dueDate.formatted(.dateTime.day()) : bill.cycleBalanceDisplayText)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                .font(.caption)
+                            }
                         }
-                        .font(.caption)
                     }
                 }
             }
             .padding(20)
-
-            Spacer()
+            .frame(maxHeight: .infinity, alignment: .top)
+            .layoutPriority(1)
 
             if incomeEnabled && showIncomeSummary && !store.incomes.isEmpty {
                 Divider()
                     .padding(.horizontal, 18)
 
-                MonthlyMoneySummary(month: month)
+                MonthlyMoneySummary(
+                    month: month,
+                    scope: scope,
+                    startDate: summaryStartDate,
+                    endDate: summaryEndDate
+                )
                     .padding(20)
             }
         }
         .background(Color.ledgerlyWorkspace)
     }
+
+    private var emptyBillsMessage: String {
+        if selectedDate != nil {
+            return "No bills due on this day."
+        }
+        if scope == .untilNextPay {
+            return nextPayDate == nil ? "Add income to use this range." : "No bills due before next pay."
+        }
+        return "No bills due in this month."
+    }
+}
+enum CalendarBillScope: String, CaseIterable, Identifiable {
+    case fullMonth = "Full month"
+    case untilNextPay = "Until next pay"
+
+    var id: String { rawValue }
 }
 struct MonthlyMoneySummary: View {
     @EnvironmentObject private var store: BillStore
     let month: Date
+    let scope: CalendarBillScope
+    let startDate: Date
+    let endDate: Date?
+
+    private var calendar: Calendar {
+        Calendar.current
+    }
 
     private var plannedIncome: Double {
-        store.incomes.reduce(0) { $0 + $1.estimatedAmount(in: month) }
+        switch scope {
+        case .fullMonth:
+            return store.incomes.reduce(0) { $0 + $1.estimatedAmount(in: month) }
+        case .untilNextPay:
+            guard let endDate else { return 0 }
+            let start = calendar.startOfDay(for: startDate)
+            let end = calendar.startOfDay(for: endDate)
+            return store.incomes.reduce(0) { total, income in
+                let payday = calendar.startOfDay(for: income.nextExpectedDate(from: start))
+                return payday >= start && payday <= end ? total + income.amount : total
+            }
+        }
     }
 
     private var paymentsRecorded: Double {
         store.bills
             .filter { !$0.isArchived }
             .flatMap(\.payments)
-            .filter {
-                Calendar.current.isDate($0.date, equalTo: month, toGranularity: .month)
-            }
+            .filter(paymentIsInScope)
             .reduce(0) { $0 + $1.amount }
     }
 
     private var billsRemaining: Double {
-        store.bills
+        if scope == .untilNextPay {
+            guard let endDate else { return 0 }
+            let start = calendar.startOfDay(for: startDate)
+            let end = calendar.startOfDay(for: endDate)
+            return store.bills
+                .filter { !$0.isArchived }
+                .filter {
+                    let dueDay = calendar.startOfDay(for: $0.dueDate)
+                    return dueDay >= start && dueDay <= end
+                }
+                .reduce(0) { total, bill in
+                    let paidInRange = bill.payments
+                        .filter(paymentIsInScope)
+                        .reduce(0) { $0 + $1.amount }
+                    return total + max(bill.planningAmount - paidInRange, 0)
+                }
+        }
+
+        return store.bills
             .filter { !$0.isArchived }
             .reduce(0) { total, bill in
                 let paidThisMonth = bill.payments
                     .filter {
-                        Calendar.current.isDate($0.date, equalTo: month, toGranularity: .month)
+                        calendar.isDate($0.date, equalTo: month, toGranularity: .month)
                     }
                     .reduce(0) { $0 + $1.amount }
                 return total + max(bill.amountDue(in: month) - paidThisMonth, 0)
@@ -653,8 +997,15 @@ struct MonthlyMoneySummary: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Monthly money picture")
-                .font(.headline)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(scope == .fullMonth ? "Monthly money picture" : "Until next pay")
+                    .font(.headline)
+                if scope == .untilNextPay, let endDate {
+                    Text("Now through \(endDate.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             summaryRow("Income planned", amount: plannedIncome)
             summaryRow("Payments recorded", amount: paymentsRecorded)
@@ -668,6 +1019,18 @@ struct MonthlyMoneySummary: View {
                 emphasized: true,
                 amountColor: afterBillsBalance < 0 ? .red : Color(hex: "#58A66B")
             )
+        }
+    }
+
+    private func paymentIsInScope(_ payment: Payment) -> Bool {
+        switch scope {
+        case .fullMonth:
+            return calendar.isDate(payment.date, equalTo: month, toGranularity: .month)
+        case .untilNextPay:
+            guard let endDate else { return false }
+            let paymentDay = calendar.startOfDay(for: payment.date)
+            return paymentDay >= calendar.startOfDay(for: startDate) &&
+                paymentDay <= calendar.startOfDay(for: endDate)
         }
     }
 
