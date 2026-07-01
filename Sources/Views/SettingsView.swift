@@ -34,12 +34,13 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .general
     @AppStorage("showAmounts") private var showAmounts = true
     @AppStorage("showPaidBills") private var showPaidBills = true
+    @AppStorage("showBillerWebsiteIcons") private var showBillerWebsiteIcons = false
     @AppStorage("dueSoonDays") private var dueSoonDays = 7
     @AppStorage("showDueSoonBadge") private var showDueSoonBadge = false
     @AppStorage("notificationsEnabled") private var notificationsEnabled = true
     @AppStorage("defaultReminderDays") private var defaultReminderDays = 3
     @AppStorage("reminderHour") private var reminderHour = 9
-    @AppStorage("autoLogPayments") private var autoLogPayments = false
+    @AppStorage("autoLogPayments") private var autoLogPayments = true
     @AppStorage("autoArchiveOneTimeBills") private var autoArchiveOneTimeBills = false
     @AppStorage("incomeEnabled") private var incomeEnabled = true
     @AppStorage("showIncomeSummary") private var showIncomeSummary = true
@@ -129,6 +130,7 @@ struct SettingsView: View {
             SettingsGroup(title: "Overview") {
                 Toggle("Show bill amounts in the list and sidebar", isOn: $showAmounts)
                 Toggle("Include paid bills in Overview", isOn: $showPaidBills)
+                Toggle("Use biller website icons in the bill list", isOn: $showBillerWebsiteIcons)
             }
 
             SettingsGroup(title: "Bills Due Soon") {
@@ -165,16 +167,53 @@ struct SettingsView: View {
     private var syncSettings: some View {
         SettingsGroup(title: "Sync") {
             HStack(alignment: .top, spacing: 14) {
-                Image(systemName: "icloud.slash")
+                Image(systemName: store.isUsingICloudDrive ? "icloud" : "icloud.slash")
                     .font(.system(size: 28))
-                    .foregroundStyle(Color.ledgerlySecondaryText)
+                    .foregroundStyle(store.isUsingICloudDrive ? Color(hex: "#4E8FD3") : Color.ledgerlySecondaryText)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Sync is coming later")
+                    Text(store.iCloudDriveSyncStatus)
                         .font(.headline)
-                    Text("Ledgerly currently stores bills, income, and attachments only on this Mac. A future Sync option will keep your Ledgerly data available across your devices.")
+                    Text("Ledgerly can keep bills, income, and attachments in your iCloud Drive so another Mac signed into the same Apple ID can use the same data folder.")
                         .foregroundStyle(.secondary)
                 }
             }
+
+            LabeledContent("Data folder") {
+                Text(store.storageFolder.path)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(store.storageFolder.path)
+            }
+
+            HStack {
+                Button(store.isUsingICloudDrive ? "Using iCloud Drive" : "Use iCloud Drive") {
+                    enableICloudDriveSync()
+                }
+                .disabled(store.isUsingICloudDrive)
+                .ledgerlyGlassButton(prominent: !store.isUsingICloudDrive)
+
+                Button("Refresh From Disk") {
+                    store.reloadFromDiskIfChanged(manual: true)
+                }
+
+                Button("Open Data Folder") {
+                    NSWorkspace.shared.open(store.storageFolder)
+                }
+            }
+
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: store.syncStatusIcon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.ledgerlySecondaryText)
+                    .frame(width: 18)
+                Text("Ledgerly watches this folder and refreshes automatically after synced files change. Refresh From Disk checks immediately if iCloud Drive has already downloaded newer Ledgerly files.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("Sync uses iCloud Drive files, so changes appear after iCloud finishes uploading or downloading. If two Macs edit the same file before iCloud catches up, the most recent saved file wins.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -266,11 +305,11 @@ struct SettingsView: View {
                     Button("Open Data Folder") {
                         NSWorkspace.shared.open(store.storageFolder)
                     }
-                    Button("Move Data…") {
+                    Button("Choose Custom Location…") {
                         chooseNewStorageLocation()
                     }
                     Spacer()
-                    Text("Bills and attachments remain on this Mac.")
+                    Text("Use this for custom storage locations. For multi-device sync, use the Sync tab.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -307,7 +346,7 @@ struct SettingsView: View {
             }
 
             SettingsGroup(title: "About") {
-                LabeledContent("Ledgerly", value: "Version 2.1.1")
+                LabeledContent("Ledgerly", value: "Version 3.0.0")
                 Text("A focused, private bill organizer for macOS.")
                     .foregroundStyle(.secondary)
             }
@@ -328,6 +367,14 @@ struct SettingsView: View {
 
         do {
             try store.moveStorage(to: selectedFolder)
+        } catch {
+            storageMoveError = error.localizedDescription
+        }
+    }
+
+    private func enableICloudDriveSync() {
+        do {
+            try store.enableICloudDriveSync()
         } catch {
             storageMoveError = error.localizedDescription
         }

@@ -42,11 +42,11 @@ struct BillRow: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 3) {
-                Text(bill.amountDisplayText)
+                Text(bill.cycleBalanceDisplayText)
                     .fontWeight(.bold)
                 Text(bill.status.rawValue)
                     .font(.caption2.bold())
-                    .foregroundStyle(bill.status.color)
+                    .foregroundStyle(bill.dueDateColor)
             }
 
             Menu {

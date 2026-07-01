@@ -13,10 +13,12 @@ struct Payment: Identifiable, Codable, Hashable {
     var date: Date
     var amount: Double
     var confirmation: String
+    var notes: String
     var attachments: [BillAttachment] = []
+    var dueDateBeforePayment: Date?
 
     enum CodingKeys: String, CodingKey {
-        case id, date, amount, confirmation, attachments
+        case id, date, amount, confirmation, notes, attachments, dueDateBeforePayment
     }
 
     init(
@@ -24,13 +26,17 @@ struct Payment: Identifiable, Codable, Hashable {
         date: Date,
         amount: Double,
         confirmation: String,
-        attachments: [BillAttachment] = []
+        notes: String = "",
+        attachments: [BillAttachment] = [],
+        dueDateBeforePayment: Date? = nil
     ) {
         self.id = id
         self.date = date
         self.amount = amount
         self.confirmation = confirmation
+        self.notes = notes
         self.attachments = attachments
+        self.dueDateBeforePayment = dueDateBeforePayment
     }
 
     init(from decoder: Decoder) throws {
@@ -39,6 +45,8 @@ struct Payment: Identifiable, Codable, Hashable {
         date = try values.decode(Date.self, forKey: .date)
         amount = try values.decode(Double.self, forKey: .amount)
         confirmation = try values.decodeIfPresent(String.self, forKey: .confirmation) ?? ""
+        notes = try values.decodeIfPresent(String.self, forKey: .notes) ?? ""
         attachments = try values.decodeIfPresent([BillAttachment].self, forKey: .attachments) ?? []
+        dueDateBeforePayment = try values.decodeIfPresent(Date.self, forKey: .dueDateBeforePayment)
     }
 }

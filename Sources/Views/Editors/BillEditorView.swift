@@ -7,6 +7,7 @@ import AppKit
 import Security
 import LinkPresentation
 import CoreImage
+import UniformTypeIdentifiers
 
 struct BillEditorView: View {
     @EnvironmentObject private var store: BillStore
@@ -25,6 +26,9 @@ struct BillEditorView: View {
     @State private var isReminderEnabled: Bool
     @State private var reminderDays: Int
     @State private var isAutoPay: Bool
+    @State private var customLogo: BillCustomLogo?
+    @State private var showingLogoImporter = false
+    @State private var logoImportError: String?
 
     private let categories = ["Home", "Utilities", "Credit Cards", "Transport", "Insurance", "Subscriptions", "Health", "Education", "Other"]
     private let colors = [
@@ -49,6 +53,7 @@ struct BillEditorView: View {
         _isReminderEnabled = State(initialValue: existingBill?.isReminderEnabled ?? true)
         _reminderDays = State(initialValue: existingBill?.reminderDays ?? savedReminderDays)
         _isAutoPay = State(initialValue: existingBill?.isAutoPay ?? false)
+        _customLogo = State(initialValue: existingBill?.customLogo)
     }
 
     var body: some View {
@@ -96,6 +101,28 @@ struct BillEditorView: View {
                                 .onTapGesture { colorHex = hex }
                         }
                     }
+
+                    HStack {
+                        Text("Custom logo")
+                        Spacer()
+                        Text(customLogo?.fileName ?? "None")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Button("Choose") {
+                            showingLogoImporter = true
+                        }
+                        Button("Remove") {
+                            customLogo = nil
+                        }
+                        .disabled(customLogo == nil)
+                    }
+
+                    if let logoImportError {
+                        Text(logoImportError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
                 }
 
                 Section("Payment") {
@@ -116,6 +143,13 @@ struct BillEditorView: View {
             .formStyle(.grouped)
         }
         .frame(width: 540, height: 650)
+        .fileImporter(
+            isPresented: $showingLogoImporter,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            importLogo(result)
+        }
     }
 
     private func save() {
@@ -135,6 +169,7 @@ struct BillEditorView: View {
             isAutoPay: isAutoPay,
             payments: existingBill?.payments ?? [],
             attachments: existingBill?.attachments ?? [],
+            customLogo: customLogo,
             isArchived: existingBill?.isArchived ?? false
         )
         if existingBill == nil {
@@ -143,5 +178,21 @@ struct BillEditorView: View {
             store.update(bill)
         }
         dismiss()
+    }
+
+    private func importLogo(_ result: Result<[URL], Error>) {
+        do {
+            guard let sourceURL = try result.get().first else { return }
+            let didStartAccessing = sourceURL.startAccessingSecurityScopedResource()
+            defer {
+                if didStartAccessing {
+                    sourceURL.stopAccessingSecurityScopedResource()
+                }
+            }
+            customLogo = try store.copyCustomLogo(from: sourceURL)
+            logoImportError = nil
+        } catch {
+            logoImportError = "Logo could not be imported."
+        }
     }
 }

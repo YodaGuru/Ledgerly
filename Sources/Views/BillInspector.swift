@@ -12,6 +12,7 @@ struct BillInspector: View {
     @EnvironmentObject private var store: BillStore
     let bill: Bill
     let onPay: () -> Void
+    let onPartialPay: () -> Void
     let onEdit: () -> Void
     let onClose: () -> Void
     @State private var notesDraft = ""
@@ -69,15 +70,26 @@ struct BillInspector: View {
                             .font(.system(size: 25, weight: .bold, design: .rounded))
                         Text(bill.dueDate.formatted(date: .complete, time: .omitted))
                             .foregroundStyle(.secondary)
-                        Text(bill.amountDisplayText)
+                        Text(bill.cycleBalanceDisplayText)
                             .font(.title3.bold())
-                            .foregroundStyle(bill.status.color)
+                            .foregroundStyle(bill.dueDateColor)
+                        if let paidSummary = bill.cyclePaidSummaryText {
+                            Text(paidSummary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     Button("Log Payment", action: onPay)
                         .ledgerlyGlassButton(prominent: true)
                         .controlSize(.large)
                         .frame(maxWidth: .infinity)
+
+                    Button("Log Partial Payment", action: onPartialPay)
+                        .ledgerlyGlassButton()
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
+                        .disabled(bill.status == .paid)
 
                     Button("Skip This Occurrence") {
                         store.skip(bill)
@@ -140,7 +152,7 @@ struct BillInspector: View {
                 store.updateNotes(for: bill, notes: notesDraft)
             }
         }
-        .task(id: bill.websiteURL?.absoluteString) {
+        .task(id: "\(bill.customLogo?.storedName ?? "none")-\(bill.websiteURL?.absoluteString ?? "")") {
             await loadWebsiteBrand()
         }
         .sheet(isPresented: $showingBillHistory) {
@@ -158,70 +170,25 @@ struct BillInspector: View {
     }
 
     private func loadWebsiteBrand() async {
+        if let customLogoImage = store.customLogoImage(for: bill) {
+            websiteBrandImage = customLogoImage
+            websiteBrandAccent = Color(hex: bill.colorHex)
+            return
+        }
+
         guard let websiteURL = bill.websiteURL else {
             websiteBrandImage = nil
             websiteBrandAccent = nil
             return
         }
 
-        let provider = LPMetadataProvider()
-        guard let metadata = await fetchMetadata(provider: provider, url: websiteURL) else {
-            websiteBrandImage = nil
-            websiteBrandAccent = nil
-            return
-        }
-
-        if let provider = metadata.iconProvider ?? metadata.imageProvider,
-           let image = await loadImage(from: provider) {
-            websiteBrandImage = image
-            websiteBrandAccent = averageAccentColor(from: image)
+        if let brand = await store.websiteBrand(for: websiteURL) {
+            websiteBrandImage = brand.image
+            websiteBrandAccent = brand.accent
         } else {
             websiteBrandImage = nil
             websiteBrandAccent = nil
         }
-    }
-
-    private func fetchMetadata(provider: LPMetadataProvider, url: URL) async -> LPLinkMetadata? {
-        await withCheckedContinuation { continuation in
-            provider.startFetchingMetadata(for: url) { metadata, _ in
-                continuation.resume(returning: metadata)
-            }
-        }
-    }
-
-    private func loadImage(from provider: NSItemProvider) async -> NSImage? {
-        await withCheckedContinuation { continuation in
-            provider.loadObject(ofClass: NSImage.self) { object, _ in
-                continuation.resume(returning: object as? NSImage)
-            }
-        }
-    }
-
-    private func averageAccentColor(from image: NSImage) -> Color? {
-        guard let tiff = image.tiffRepresentation,
-              let ciImage = CIImage(data: tiff) else { return nil }
-
-        guard let filter = CIFilter(name: "CIAreaAverage") else { return nil }
-        filter.setValue(ciImage, forKey: kCIInputImageKey)
-        filter.setValue(CIVector(cgRect: ciImage.extent), forKey: kCIInputExtentKey)
-        guard let output = filter.outputImage else { return nil }
-
-        let context = CIContext(options: nil)
-        var bitmap = [UInt8](repeating: 0, count: 4)
-        context.render(
-            output,
-            toBitmap: &bitmap,
-            rowBytes: 4,
-            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-            format: .RGBA8,
-            colorSpace: CGColorSpaceCreateDeviceRGB()
-        )
-
-        return Color(
-            red: Double(bitmap[0]) / 255.0,
-            green: Double(bitmap[1]) / 255.0,
-            blue: Double(bitmap[2]) / 255.0
-        )
     }
 }
 struct InspectorLink: View {

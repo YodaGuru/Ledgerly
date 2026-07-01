@@ -14,6 +14,10 @@ struct BillAttachment: Identifiable, Codable, Hashable {
     var storedName: String
     var addedDate = Date()
 }
+struct BillCustomLogo: Codable, Hashable {
+    var fileName: String
+    var storedName: String
+}
 struct Bill: Identifiable, Codable, Hashable {
     var id = UUID()
     var name: String
@@ -30,6 +34,7 @@ struct Bill: Identifiable, Codable, Hashable {
     var isAutoPay: Bool
     var payments: [Payment]
     var attachments: [BillAttachment]
+    var customLogo: BillCustomLogo?
     var isArchived: Bool
 
     init(
@@ -48,6 +53,7 @@ struct Bill: Identifiable, Codable, Hashable {
         isAutoPay: Bool,
         payments: [Payment],
         attachments: [BillAttachment] = [],
+        customLogo: BillCustomLogo? = nil,
         isArchived: Bool = false
     ) {
         self.id = id
@@ -65,12 +71,13 @@ struct Bill: Identifiable, Codable, Hashable {
         self.isAutoPay = isAutoPay
         self.payments = payments
         self.attachments = attachments
+        self.customLogo = customLogo
         self.isArchived = isArchived
     }
 
     enum CodingKeys: String, CodingKey {
         case id, name, amount, isVariableAmount, dueDate, frequency, category, colorHex, website
-        case notes, isReminderEnabled, reminderDays, isAutoPay, payments, attachments, isArchived
+        case notes, isReminderEnabled, reminderDays, isAutoPay, payments, attachments, customLogo, isArchived
     }
 
     init(from decoder: Decoder) throws {
@@ -90,19 +97,63 @@ struct Bill: Identifiable, Codable, Hashable {
         isAutoPay = try values.decodeIfPresent(Bool.self, forKey: .isAutoPay) ?? false
         payments = try values.decodeIfPresent([Payment].self, forKey: .payments) ?? []
         attachments = try values.decodeIfPresent([BillAttachment].self, forKey: .attachments) ?? []
+        customLogo = try values.decodeIfPresent(BillCustomLogo.self, forKey: .customLogo)
         isArchived = try values.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     }
 
     var isPaidForCurrentCycle: Bool {
+        cycleRemainingAmount <= 0.005
+    }
+
+    var cyclePaidAmount: Double {
         let calendar = Calendar.current
-        return payments.contains { payment in
-            switch frequency {
-            case .weekly, .biweekly:
-                return calendar.isDate(payment.date, inSameDayAs: dueDate)
-            case .monthly, .quarterly, .yearly, .once:
-                return calendar.isDate(payment.date, equalTo: dueDate, toGranularity: .month)
+        return payments
+            .filter { payment in
+                if let dueDateBeforePayment = payment.dueDateBeforePayment {
+                    return calendar.isDate(dueDateBeforePayment, inSameDayAs: dueDate)
+                }
+                switch frequency {
+                case .weekly, .biweekly:
+                    return calendar.isDate(payment.date, inSameDayAs: dueDate)
+                case .monthly, .quarterly, .yearly, .once:
+                    return calendar.isDate(payment.date, equalTo: dueDate, toGranularity: .month)
+                }
             }
+            .reduce(0) { $0 + $1.amount }
+    }
+
+    var cycleRemainingAmount: Double {
+        max(planningAmount - cyclePaidAmount, 0)
+    }
+
+    var cycleBalanceDisplayText: String {
+        if isPaidForCurrentCycle { return "Paid" }
+        if cyclePaidAmount > 0 {
+            return "\(cycleRemainingAmount.currency) remaining"
         }
+        return amountDisplayText
+    }
+
+    func isPaymentInCurrentCycle(_ payment: Payment) -> Bool {
+        let calendar = Calendar.current
+        if let dueDateBeforePayment = payment.dueDateBeforePayment {
+            return calendar.isDate(dueDateBeforePayment, inSameDayAs: dueDate)
+        }
+        switch frequency {
+        case .weekly, .biweekly:
+            return calendar.isDate(payment.date, inSameDayAs: dueDate)
+        case .monthly, .quarterly, .yearly, .once:
+            return calendar.isDate(payment.date, equalTo: dueDate, toGranularity: .month)
+        }
+    }
+
+    var hasPartialPaymentForCurrentCycle: Bool {
+        cyclePaidAmount > 0 && !isPaidForCurrentCycle
+    }
+
+    var cyclePaidSummaryText: String? {
+        guard hasPartialPaymentForCurrentCycle else { return nil }
+        return "\(cyclePaidAmount.currency) paid"
     }
 
     var status: BillStatus {
@@ -116,7 +167,37 @@ struct Bill: Identifiable, Codable, Hashable {
     }
 
     var amountDisplayText: String {
-        isVariableAmount ? "Variable" : amount.currency
+        guard isVariableAmount else { return amount.currency }
+        guard let estimatedVariableAmount else { return "Variable" }
+        return "Est. \(estimatedVariableAmount.currency)"
+    }
+
+    var estimatedVariableAmount: Double? {
+        guard isVariableAmount else { return nil }
+        let recentPayments = payments
+            .filter { $0.amount > 0 }
+            .sorted { $0.date > $1.date }
+            .prefix(6)
+
+        guard !recentPayments.isEmpty else { return nil }
+        let total = recentPayments.reduce(0) { $0 + $1.amount }
+        return total / Double(recentPayments.count)
+    }
+
+    var planningAmount: Double {
+        estimatedVariableAmount ?? amount
+    }
+
+    var dueDateColor: Color {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let dueDay = calendar.startOfDay(for: dueDate)
+        let dueSoonLimit = calendar.date(byAdding: .day, value: 7, to: today) ?? today
+
+        if status == .paid { return .green }
+        if dueDay < today { return .red }
+        if dueDay <= dueSoonLimit { return .yellow }
+        return .green
     }
 
     var websiteURL: URL? {
@@ -140,7 +221,7 @@ struct Bill: Identifiable, Codable, Hashable {
     func amountDue(in month: Date) -> Double {
         let calendar = Calendar.current
         if frequency == .once {
-            return calendar.isDate(dueDate, equalTo: month, toGranularity: .month) ? amount : 0
+            return calendar.isDate(dueDate, equalTo: month, toGranularity: .month) ? planningAmount : 0
         }
 
         let start = calendar.date(from: calendar.dateComponents([.year, .month], from: month))!
@@ -172,13 +253,13 @@ struct Bill: Identifiable, Codable, Hashable {
                 }
                 occurrence = next
             }
-            return amount * Double(count)
+            return planningAmount * Double(count)
         case .monthly:
-            return amount
+            return planningAmount
         case .quarterly:
-            return months % 3 == 0 ? amount : 0
+            return months % 3 == 0 ? planningAmount : 0
         case .yearly:
-            return months % 12 == 0 ? amount : 0
+            return months % 12 == 0 ? planningAmount : 0
         case .once:
             return 0
         }
