@@ -512,6 +512,7 @@ final class BillStore: ObservableObject {
     func markPaid(
         _ bill: Bill,
         amount: Double? = nil,
+        date: Date = Date(),
         confirmation: String = "",
         notes: String = "",
         attachments: [BillAttachment] = [],
@@ -522,7 +523,7 @@ final class BillStore: ObservableObject {
         let paymentAmount = amount ?? bills[index].cycleRemainingAmount
         bills[index].payments.append(
             Payment(
-                date: Date(),
+                date: date,
                 amount: paymentAmount,
                 confirmation: confirmation,
                 notes: notes,
