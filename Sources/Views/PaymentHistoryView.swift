@@ -2,6 +2,7 @@
 // Copyright (C) 2026 YodaGuru
 
 import SwiftUI
+import QuickLook
 import UserNotifications
 import AppKit
 import Security
@@ -13,6 +14,7 @@ struct PaymentHistoryView: View {
     @State private var searchText = ""
     @State private var editingEntry: PaymentEntry?
     @State private var deletingEntry: PaymentEntry?
+    @State private var previewURL: URL?
 
     private var entries: [PaymentEntry] {
         store.bills
@@ -28,20 +30,12 @@ struct PaymentHistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("Payment history")
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text("A searchable record of every payment and confirmation number.")
-                        .foregroundStyle(.secondary)
-                    Text("Double-click a payment with an attachment to open it.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                TextField("Search payments", text: $searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 240)
+            VStack(alignment: .leading, spacing: 7) {
+                Text("A searchable record of every payment and confirmation number.")
+                    .foregroundStyle(.secondary)
+                Text("Double-click a payment with an attachment to open it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if entries.isEmpty {
@@ -78,7 +72,12 @@ struct PaymentHistoryView: View {
                                 PaymentHistoryRow(
                                     entry: entry,
                                     onEdit: { editingEntry = entry },
-                                    onDelete: { deletingEntry = entry }
+                                    onDelete: { deletingEntry = entry },
+                                    onPreview: {
+                                        if let attachment = entry.payment.attachments.first {
+                                            previewURL = store.attachmentURL(attachment)
+                                        }
+                                    }
                                 )
                                 if entry.id != entries.last?.id {
                                     Divider().padding(.leading, 54)
@@ -96,6 +95,8 @@ struct PaymentHistoryView: View {
         }
         .padding(28)
         .background(Color.ledgerlyWorkspace)
+        .searchable(text: $searchText, prompt: "Search payments")
+        .quickLookPreview($previewURL)
         .sheet(item: $editingEntry) { entry in
             PaymentEditView(entry: entry)
                 .environmentObject(store)
@@ -130,6 +131,7 @@ struct BillPaymentHistoryView: View {
     let bill: Bill
     @State private var editingEntry: PaymentEntry?
     @State private var deletingEntry: PaymentEntry?
+    @State private var previewURL: URL?
 
     private var currentBill: Bill {
         store.bills.first { $0.id == bill.id } ?? bill
@@ -187,6 +189,12 @@ struct BillPaymentHistoryView: View {
                                         .foregroundStyle(Color(hex: "#4E8FD3"))
                                 }
                                 Menu {
+                                    if let attachment = payment.attachments.first {
+                                        Button("Quick Look Receipt") {
+                                            previewURL = store.attachmentURL(attachment)
+                                        }
+                                        Divider()
+                                    }
                                     Button("Edit Payment") {
                                         editingEntry = PaymentEntry(bill: currentBill, payment: payment)
                                     }
@@ -228,6 +236,14 @@ struct BillPaymentHistoryView: View {
                                         }
                                     }
                                     .buttonStyle(.plain)
+                                    .contextMenu {
+                                        Button("Quick Look") {
+                                            previewURL = store.attachmentURL(attachment)
+                                        }
+                                        Button("Open") {
+                                            NSWorkspace.shared.open(store.attachmentURL(attachment))
+                                        }
+                                    }
                                     .padding(10)
                                     .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                                 }
@@ -240,6 +256,7 @@ struct BillPaymentHistoryView: View {
         }
         .frame(width: 520, height: 440)
         .background(Color.ledgerlyWorkspace)
+        .quickLookPreview($previewURL)
         .sheet(item: $editingEntry) { entry in
             PaymentEditView(entry: entry)
                 .environmentObject(store)
@@ -273,6 +290,7 @@ struct PaymentHistoryRow: View {
     let entry: PaymentEntry
     let onEdit: () -> Void
     let onDelete: () -> Void
+    var onPreview: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 24) {
@@ -310,6 +328,10 @@ struct PaymentHistoryRow: View {
             }
             .frame(width: 90, alignment: .center)
             Menu {
+                if !entry.payment.attachments.isEmpty {
+                    Button("Quick Look Receipt") { onPreview?() }
+                    Divider()
+                }
                 Button("Edit Payment", action: onEdit)
                 Button("Delete Payment", role: .destructive, action: onDelete)
             } label: {
@@ -326,6 +348,14 @@ struct PaymentHistoryRow: View {
             if let attachment = entry.payment.attachments.first {
                 NSWorkspace.shared.open(store.attachmentURL(attachment))
             }
+        }
+        .contextMenu {
+            if !entry.payment.attachments.isEmpty {
+                Button("Quick Look Receipt") { onPreview?() }
+                Divider()
+            }
+            Button("Edit Payment", action: onEdit)
+            Button("Delete Payment", role: .destructive, action: onDelete)
         }
     }
 }
