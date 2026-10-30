@@ -8,6 +8,9 @@ import Security
 import LinkPresentation
 import CoreImage
 
+/// Standard source-list sidebar. On macOS 26 the system supplies the floating
+/// Liquid Glass sidebar, selection highlight, and keyboard navigation, so no
+/// custom backgrounds or glass effects are applied here.
 struct Sidebar: View {
     @EnvironmentObject private var store: BillStore
     @Binding var selection: SidebarItem
@@ -16,95 +19,71 @@ struct Sidebar: View {
     @AppStorage("dueSoonDays") private var dueSoonDays = 7
     @AppStorage("incomeEnabled") private var incomeEnabled = true
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "calendar.badge.checkmark")
-                    .font(.title2)
-                    .foregroundStyle(Color(hex: "#4E8FD3"))
-
-                Text("Ledgerly")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.ledgerlyPrimaryText)
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    SidebarSection(title: "BILLS") {
-                        ForEach([SidebarItem.overview, .dueSoon, .dueMonth, .paidRecently]) { item in
-                            sidebarButton(item)
-                        }
-                    }
-
-                    SidebarSection(title: "REPORTS") {
-                        if incomeEnabled {
-                            sidebarButton(.income)
-                        }
-
-                        ForEach([SidebarItem.forecast, .history]) { item in
-                            sidebarButton(item)
-                        }
-                    }
-
-                    SidebarSection(title: "ARCHIVED") {
-                        sidebarButton(.archive)
-                    }
-
-                    SidebarSection(title: "APP") {
-                        syncButton
-                        sidebarButton(.settings)
-                    }
+    /// `List` single selection needs an optional binding; never clear the selection.
+    private var listSelection: Binding<SidebarItem?> {
+        Binding(
+            get: { selection },
+            set: { newValue in
+                if let newValue {
+                    selection = newValue
                 }
-                .padding(.horizontal, 10)
+            }
+        )
+    }
+
+    var body: some View {
+        List(selection: listSelection) {
+            Section(header: SidebarHeader("Bills")) {
+                ForEach([SidebarItem.overview, .dueSoon, .dueMonth, .paidRecently]) { item in
+                    sidebarRow(item)
+                }
             }
 
-            Spacer(minLength: 18)
+            Section(header: SidebarHeader("Reports")) {
+                if incomeEnabled {
+                    sidebarRow(.income)
+                }
+
+                ForEach([SidebarItem.forecast, .history]) { item in
+                    sidebarRow(item)
+                }
+            }
+
+            Section(header: SidebarHeader("Archived")) {
+                sidebarRow(.archive)
+            }
+
+            Section(header: SidebarHeader("App")) {
+                syncButton
+                sidebarRow(.settings)
+            }
         }
+        .listStyle(.sidebar)
     }
 
     private var syncButton: some View {
         Button {
             store.reloadFromDiskIfChanged(manual: true)
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: store.syncStatusIcon)
-                    .font(.system(size: 16, weight: .medium))
-                    .frame(width: 22)
-                    .foregroundStyle(Color.ledgerlySecondaryText)
-                VStack(alignment: .leading, spacing: 2) {
+            Label {
+                VStack(alignment: .leading, spacing: 1) {
                     Text("Sync")
-                        .fontWeight(.medium)
                     Text(store.syncStatusText)
                         .font(.caption)
-                        .foregroundStyle(Color.ledgerlySecondaryText)
+                        .foregroundStyle(Color.primary.opacity(0.7))
                         .lineLimit(1)
                 }
-                Spacer()
+            } icon: {
+                Image(systemName: store.syncStatusIcon)
             }
-            .foregroundStyle(Color.ledgerlyPrimaryText)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("Check the Ledgerly data folder for synced changes.")
     }
 
-    private func sidebarButton(_ item: SidebarItem) -> some View {
-        Button {
-            selection = item
-        } label: {
-            SidebarRow(
-                item: item,
-                subtitle: subtitle(for: item),
-                isSelected: selection == item
-            )
-        }
-        .buttonStyle(.plain)
+    private func sidebarRow(_ item: SidebarItem) -> some View {
+        SidebarRow(item: item, subtitle: subtitle(for: item))
+            .tag(item)
     }
 
     private func subtitle(for item: SidebarItem) -> String? {
@@ -144,87 +123,70 @@ struct Sidebar: View {
             : "\(bills.count)"
     }
 }
-struct LedgerlySidebarGlassBackground: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content
-                .background(.clear)
-                .glassEffect(.regular.interactive(), in: Rectangle())
-        } else {
-            content
-                .ledgerlyGlass(in: Rectangle())
-        }
-    }
-}
-struct SidebarSection<Content: View>: View {
-    let title: String
-    let content: Content
 
-    init(title: String, @ViewBuilder content: () -> Content) {
+/// Section header with more contrast than the system default, which gets hard to
+/// read on the glass sidebar.
+struct SidebarHeader: View {
+    let title: String
+
+    init(_ title: String) {
         self.title = title
-        self.content = content()
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .font(.caption2.bold())
-                .tracking(1.1)
-                .foregroundStyle(Color.ledgerlySecondaryText)
-                .padding(.horizontal, 10)
-            content
-        }
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Color.primary.opacity(0.7))
+            .textCase(nil)
     }
 }
+
 struct SidebarRow: View {
     let item: SidebarItem
     let subtitle: String?
-    let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: item.icon)
-                .font(.system(size: 16, weight: .medium))
-                .frame(width: 22)
-                .foregroundStyle(isSelected ? Color.white : Color.ledgerlySecondaryText)
-            VStack(alignment: .leading, spacing: 2) {
+        Label {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(item.rawValue)
-                    .fontWeight(.medium)
                 if let subtitle {
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(isSelected ? Color.white.opacity(0.76) : Color.ledgerlySecondaryText)
+                        .foregroundStyle(Color.primary.opacity(0.7))
                 }
             }
-            Spacer()
-        }
-        .foregroundStyle(isSelected ? Color.white : Color.ledgerlyPrimaryText)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(LedgerlySidebarSelectionBackground(isSelected: isSelected))
-        .contentShape(Rectangle())
-    }
-}
-struct LedgerlySidebarSelectionBackground: ViewModifier {
-    let isSelected: Bool
-
-    func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content
-                .background(
-                    isSelected ? Color.white.opacity(0.10) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                )
-                .glassEffect(isSelected ? .regular.interactive() : .identity, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        } else {
-            content
-                .background(
-                    isSelected ? Color(hex: "#4E8FD3") : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 10)
-                )
+        } icon: {
+            Image(systemName: item.icon)
         }
     }
 }
 
-// Overview
+/// Floating Liquid Glass sidebar card (macOS 26+). Rounded, inset from the window
+/// edges, with the app name on top; the list scrolls inside the glass.
+@available(macOS 26.0, *)
+struct FloatingSidebarPanel: View {
+    @Binding var selection: SidebarItem
+
+    private let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "calendar.badge.checkmark")
+                    .font(.title2)
+                    .foregroundStyle(Color(hex: "#4E8FD3"))
+                Text("Ledgerly")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 6)
+
+            Sidebar(selection: $selection)
+                .scrollContentBackground(.hidden)
+        }
+        .frame(width: 262)
+        .clipShape(shape)
+        .glassEffect(.regular, in: shape)
+    }
+}
