@@ -12,25 +12,14 @@ struct ContentView: View {
     @EnvironmentObject private var store: BillStore
     @State private var selection: SidebarItem = .overview
     @State private var showingAddBill = false
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @AppStorage("passwordProtectionEnabled") private var passwordProtectionEnabled = false
     @State private var isLocked = false
+    @AppStorage("showSidebarPanel") private var showSidebar = true
 
     var body: some View {
         ZStack {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                Sidebar(selection: $selection)
-                    .navigationSplitViewColumnWidth(min: 250, ideal: 250, max: 250)
-            } detail: {
-                detailContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.ledgerlyWorkspace)
-                    .ignoresSafeArea(.container, edges: .top)
-            }
-            .navigationSplitViewStyle(.balanced)
-            .modifier(RemoveSidebarToggleModifier())
-            .background(SidebarToggleRemovalView().frame(width: 0, height: 0))
-            .allowsHitTesting(!isLocked)
+            shell
+                .allowsHitTesting(!isLocked)
 
             if isLocked {
                 AppLockView {
@@ -38,21 +27,6 @@ struct ContentView: View {
                 }
                 .transition(.opacity)
             }
-        }
-        .background {
-            ZStack {
-                Color.ledgerlyWorkspace
-                LinearGradient(
-                    colors: [
-                        Color(hex: "#4E8FD3").opacity(0.10),
-                        Color(hex: "#7B6AD8").opacity(0.06),
-                        Color.clear
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-            .ignoresSafeArea()
         }
         .tint(Color(hex: "#4E8FD3"))
         .sheet(isPresented: $showingAddBill) {
@@ -71,16 +45,77 @@ struct ContentView: View {
             lockIfNeeded()
         }
         .onAppear {
-            columnVisibility = .all
             store.autoLogDuePayments()
             store.updateDockBadge()
             lockIfNeeded()
         }
-        .onChange(of: columnVisibility) { newValue in
-            if newValue != .all {
-                columnVisibility = .all
+    }
+
+    @ViewBuilder
+    private var shell: some View {
+        if #available(macOS 26.0, *) {
+            floatingShell
+        } else {
+            // Standard split view fallback for macOS 13-15.
+            NavigationSplitView {
+                Sidebar(selection: $selection)
+                    .navigationSplitViewColumnWidth(min: 210, ideal: 250, max: 320)
+            } detail: {
+                detailContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .navigationTitle(selection.rawValue)
             }
         }
+    }
+
+    /// macOS 26+: the sidebar is a floating Liquid Glass panel inset from the
+    /// window edges (like the Apple Maps panel), with content beside it.
+    @available(macOS 26.0, *)
+    private var floatingShell: some View {
+        HStack(spacing: 0) {
+            if showSidebar {
+                FloatingSidebarPanel(selection: $selection)
+                    .padding(.leading, 10)
+                    .padding(.trailing, 4)
+                    .padding(.vertical, 10)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+
+            detailContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle(selection.rawValue)
+        }
+        .background {
+            // A neutral, slightly uneven backdrop so the glass has something to pick up
+            // without tinting it a color.
+            ZStack {
+                Color.ledgerlyWorkspace
+                LinearGradient(
+                    colors: [
+                        Color.primary.opacity(0.10),
+                        Color.primary.opacity(0.03),
+                        Color.clear
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            .ignoresSafeArea()
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    withAnimation(.smooth) { showSidebar.toggle() }
+                } label: {
+                    Label("Toggle Sidebar", systemImage: "sidebar.leading")
+                }
+                .keyboardShortcut("s", modifiers: [.command, .control])
+                .help(showSidebar ? "Hide Sidebar (\u{2303}\u{2318}S)" : "Show Sidebar (\u{2303}\u{2318}S)")
+            }
+        }
+        // Experiment: drop the full-width toolbar background/divider that cuts across
+        // above the floating panel. Remove this line to restore the system toolbar.
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
 
     private func lockIfNeeded() {
@@ -103,60 +138,6 @@ struct ContentView: View {
             IncomeView()
         case .settings:
             SettingsView()
-        }
-    }
-}
-
-private struct RemoveSidebarToggleModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(macOS 14.0, *) {
-            content.toolbar(removing: .sidebarToggle)
-        } else {
-            content
-        }
-    }
-}
-
-private struct SidebarToggleRemovalView: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        removeSidebarToggleSoon(from: view)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        removeSidebarToggleSoon(from: nsView)
-    }
-
-    private func removeSidebarToggleSoon(from view: NSView) {
-        let delays: [TimeInterval] = [0, 0.15, 0.35, 0.75, 1.25]
-
-        for delay in delays {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                Self.removeSidebarToggle(from: view.window)
-            }
-        }
-    }
-
-    private static func removeSidebarToggle(from window: NSWindow?) {
-        guard let window else { return }
-
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-
-        guard let toolbar = window.toolbar else { return }
-
-        toolbar.allowsUserCustomization = false
-
-        for index in toolbar.items.indices.reversed() {
-            let rawIdentifier = toolbar.items[index].itemIdentifier.rawValue.lowercased()
-            if rawIdentifier.contains("sidebar") || rawIdentifier.contains("toggle") {
-                toolbar.removeItem(at: index)
-            }
-        }
-
-        if toolbar.items.isEmpty {
-            window.toolbar = nil
         }
     }
 }
