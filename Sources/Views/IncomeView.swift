@@ -18,21 +18,8 @@ struct IncomeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("Income")
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text("Track expected paychecks and recurring income without connecting a bank.")
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button {
-                    showingAddIncome = true
-                } label: {
-                    Label("Add Income", systemImage: "plus")
-                }
-                .ledgerlyGlassButton(prominent: true)
-            }
+            Text("Track expected paychecks and recurring income without connecting a bank.")
+                .foregroundStyle(.secondary)
 
             HStack(spacing: 16) {
                 StatCard(
@@ -108,6 +95,16 @@ struct IncomeView: View {
         }
         .padding(28)
         .background(Color.ledgerlyWorkspace)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingAddIncome = true
+                } label: {
+                    Label("Add Income", systemImage: "plus")
+                }
+                .help("Add Income")
+            }
+        }
         .sheet(isPresented: $showingAddIncome) {
             IncomeEditorView()
                 .environmentObject(store)
