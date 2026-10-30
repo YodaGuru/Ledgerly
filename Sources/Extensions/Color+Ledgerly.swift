@@ -49,38 +49,6 @@ extension Color {
         }
     )
 
-    static let ledgerlyListSurface = Color(
-        nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                ? NSColor(calibratedWhite: 0.105, alpha: 1)
-                : NSColor(calibratedRed: 0.984, green: 0.973, blue: 0.953, alpha: 1)
-        }
-    )
-
-    static let ledgerlyToolbar = Color(
-        nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                ? NSColor(calibratedWhite: 0.125, alpha: 1)
-                : NSColor(calibratedRed: 1, green: 0.976, blue: 0.953, alpha: 1)
-        }
-    )
-
-    static let ledgerlyInspector = Color(
-        nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                ? NSColor(calibratedWhite: 0.115, alpha: 1)
-                : NSColor(calibratedRed: 1, green: 0.992, blue: 0.976, alpha: 1)
-        }
-    )
-
-    static let ledgerlyInspectorHeader = Color(
-        nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                ? NSColor(calibratedRed: 0.17, green: 0.14, blue: 0.12, alpha: 1)
-                : NSColor(calibratedRed: 1, green: 0.969, blue: 0.929, alpha: 1)
-        }
-    )
-
     static let ledgerlyReportCard = Color(
         nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
