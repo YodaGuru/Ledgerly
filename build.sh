@@ -10,10 +10,10 @@ APP="$BUILD/Ledgerly.app"
 DMG_ROOT="$BUILD/dmg"
 ICON_BUILD="$BUILD/IconAssets"
 OUTPUT="$ROOT/../outputs"
-VERSION="3.0.0"
+VERSION="3.1.0"
 DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 SDKROOT="$(DEVELOPER_DIR="$DEVELOPER_DIR" xcrun --sdk macosx --show-sdk-path)"
-swift_sources=("${(@f)$(find "$ROOT/Sources" -type f -name '*.swift' | sort)}")
+swift_sources=("${(@f)$(find "$ROOT/Sources" -type f -name '*.swift' ! -name '._*' | sort)}")
 
 rm -rf "$BUILD"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$DMG_ROOT" "$ICON_BUILD" "$OUTPUT"
