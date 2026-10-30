@@ -43,8 +43,6 @@ struct ForecastView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Text("12-month forecast")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
                 Text("Plan ahead for recurring and one-time bills.")
                     .foregroundStyle(.secondary)
 

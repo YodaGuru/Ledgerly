@@ -39,7 +39,8 @@ struct MonthCalendar: View {
             }
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 7) {
-                ForEach(Calendar.current.veryShortWeekdaySymbols, id: \.self) { weekday in
+                // Index as the id: the one-letter symbols repeat (T, T, S, S).
+                ForEach(Array(Calendar.current.veryShortWeekdaySymbols.enumerated()), id: \.offset) { _, weekday in
                     Text(weekday.uppercased())
                         .font(.caption2.bold())
                         .foregroundStyle(.secondary)
@@ -56,13 +57,12 @@ struct MonthCalendar: View {
             }
         }
         .padding(20)
-        .background(.white)
+        .background(Color.ledgerlyReportCard)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.black.opacity(0.06))
+                .stroke(Color.ledgerlyDivider)
         }
-        .shadow(color: .black.opacity(0.04), radius: 18, y: 8)
     }
 }
 struct CalendarDay: View {
@@ -90,6 +90,6 @@ struct CalendarDay: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 58)
-        .background(bills.isEmpty ? Color.clear : Color(hex: "#FAF2EA"), in: RoundedRectangle(cornerRadius: 10))
+        .background(bills.isEmpty ? Color.clear : Color(hex: "#4E8FD3").opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
     }
 }

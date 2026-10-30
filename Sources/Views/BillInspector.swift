@@ -56,7 +56,7 @@ struct BillInspector: View {
                 LinearGradient(
                     colors: [
                         (websiteBrandAccent ?? Color(hex: bill.colorHex)).opacity(0.24),
-                        Color.ledgerlyInspectorHeader
+                        (websiteBrandAccent ?? Color(hex: bill.colorHex)).opacity(0.04)
                     ],
                     startPoint: .leading,
                     endPoint: .trailing
@@ -130,7 +130,6 @@ struct BillInspector: View {
                 }
                 .padding(20)
             }
-            .background(Color.ledgerlyInspector)
 
             Divider()
             HStack {

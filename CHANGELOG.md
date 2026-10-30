@@ -2,6 +2,48 @@
 
 All notable changes to Ledgerly are documented here.
 
+## [3.1.0] - 2026-10-30
+
+### What’s New
+
+- Added a payment date picker to Log Payment and Log Partial Payment, so a payment can be recorded on the day it was actually made. Future dates are not allowed, and the chosen date appears in Payment History and Last Paid. Back-dating does not change which due date the payment counts against or the bill’s next due date.
+- Bill table columns (Name, Amount, Due Date, Last Paid) can now be sorted by clicking the column header. The default order is still by due date, and bills that have never been paid sort as oldest in Last Paid.
+- Double-click a bill, or press Return, to edit it.
+- Added a Log Payment button to the toolbar for the selected bill.
+- Added Quick Look for receipts: right-click a payment (or use its “…” menu) in Payment History or a bill’s history and choose Quick Look Receipt, or right-click a payment document in a bill’s history.
+- Added keyboard shortcuts: Log Payment ⌘L, and Show/Hide Sidebar ⌃⌘S (macOS 26).
+- The sidebar remembers whether it was hidden.
+
+### Liquid Glass
+
+- On macOS 26 the sidebar is now a floating Liquid Glass panel inset from the window edges, with the Ledgerly name on top and a toolbar button to hide it. It uses a standard source list inside, so selection and keyboard navigation come from the system.
+- On macOS 26 the details pane (bill details, or the monthly calendar when no bill is selected) is now a matching floating Liquid Glass card with the same shape and margins as the sidebar.
+- The window toolbar no longer draws a full-width bar across the floating panels, and the sidebar glass uses a neutral backdrop instead of a blue tint.
+- Sidebar section headers and subtitles have more contrast on the glass.
+- Content now scrolls under the window toolbar, because the opaque toolbar, list, and inspector backgrounds were removed.
+- macOS 13–15 keep a standard split-view sidebar. The details pane uses the system inspector on macOS 14–15 and a plain side pane on macOS 13.
+
+### Changed
+
+- The bill list is now a standard table with native column resizing, selection, and right-click menu. The default column widths were adjusted, with a little more room for Amount and Due Date.
+- “Add Bill”, “Add Income”, and search now live in the native window toolbar. Payment History and Overview search moved there from inside the page.
+- Each screen now sets a standard window title. The large in-page headings on Income, Forecast, Payment History, and Settings were removed because the window title replaces them.
+- The details pane is always shown. Its show/hide setting was removed.
+- Added padding between the due-date color bar and the Due Date column edge.
+- `build.sh` now skips macOS `._*` metadata files, so builds from non-APFS drives no longer fail with “invalid character in source file”.
+
+### Fixed
+
+- The monthly calendar weekday header was missing Thursday and Saturday because the repeated one-letter symbols (T, S) were dropped. It now shows all seven days in both calendar views.
+- The monthly calendar card was always white in Dark Mode. It now follows the app appearance, and its bill-day highlight uses the app accent color.
+
+### Removed
+
+- The hidden title bar and the code that stripped sidebar and toolbar items after launch.
+- The custom hand-built sidebar buttons, selection styling, and sidebar glass helpers.
+- The custom bill list layout, including its hand-built column resize handles, horizontal scroll bar, and draggable side-pane divider. Saved column and pane widths from earlier versions are no longer used.
+- Unused color definitions for the old toolbar, list, and inspector backgrounds.
+
 ## [3.0.0] - 2026-07-01
 
 ### What’s New
