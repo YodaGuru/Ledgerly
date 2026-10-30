@@ -21,7 +21,6 @@ struct LedgerlyApp: App {
                     store.reloadFromDiskIfChanged()
                 }
         }
-        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("Add Bill…") {
