@@ -50,12 +50,6 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Settings")
-                .font(.system(size: 30, weight: .bold, design: .rounded))
-                .padding(.horizontal, 28)
-                .padding(.top, 24)
-                .padding(.bottom, 16)
-
             HStack(spacing: 6) {
                 ForEach(SettingsTab.allCases) { tab in
                     Button {
@@ -83,6 +77,7 @@ struct SettingsView: View {
             .padding(6)
             .ledgerlyGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .padding(.horizontal, 22)
+            .padding(.top, 14)
             .padding(.bottom, 16)
 
             Divider()
@@ -346,7 +341,7 @@ struct SettingsView: View {
             }
 
             SettingsGroup(title: "About") {
-                LabeledContent("Ledgerly", value: "Version 3.0.0")
+                LabeledContent("Ledgerly", value: "Version 3.1.0")
                 Text("A focused, private bill organizer for macOS.")
                     .foregroundStyle(.secondary)
             }
