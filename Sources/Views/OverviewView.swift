@@ -21,22 +21,13 @@ struct OverviewView: View {
     @AppStorage("showAmounts") private var showAmounts = true
     @AppStorage("showPaidBills") private var showPaidBills = true
     @AppStorage("dueSoonDays") private var dueSoonDays = 7
-    @AppStorage("overviewRightPaneWidth") private var overviewRightPaneWidth = 350.0
-    @AppStorage("overviewNameColumnWidth") private var overviewNameColumnWidth = 320.0
-    @AppStorage("overviewAmountColumnWidth") private var overviewAmountColumnWidth = 110.0
-    @AppStorage("overviewDueDateColumnWidth") private var overviewDueDateColumnWidth = 160.0
-    @AppStorage("overviewLastPaidColumnWidth") private var overviewLastPaidColumnWidth = 140.0
+    @AppStorage("showBillerWebsiteIcons") private var showBillerWebsiteIcons = false
     @State private var selectedBillID: UUID?
     @State private var editingBill: Bill?
     @State private var paymentRequest: PaymentRequest?
     @State private var billPendingDeletion: Bill?
     @State private var searchText = ""
-    @State private var nameColumnDragStartWidth: CGFloat?
-    @State private var amountColumnDragStartWidth: CGFloat?
-    @State private var dueDateColumnDragStartWidth: CGFloat?
-    @State private var lastPaidColumnDragStartWidth: CGFloat?
-    @State private var horizontalScrollOffset: CGFloat = 0
-    @State private var horizontalDragStartOffset: CGFloat?
+    @State private var sortOrder: [KeyPathComparator<Bill>] = [KeyPathComparator(\Bill.dueDate)]
 
     private var visibleBills: [Bill] {
         let calendar = Calendar.current
@@ -62,7 +53,7 @@ struct OverviewView: View {
                 $0.name.localizedCaseInsensitiveContains(searchText) ||
                 $0.category.localizedCaseInsensitiveContains(searchText)
             }
-            .sorted { $0.dueDate < $1.dueDate }
+            .sorted(using: sortOrder)
     }
 
     private var selectedBill: Bill? {
@@ -71,210 +62,187 @@ struct OverviewView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            let compact = geometry.size.width < 900
-            let minimumListWidth: CGFloat = 420
-            let preferredSideWidth: CGFloat = min(max(CGFloat(overviewRightPaneWidth), 280), 340)
-            let dividerWidth: CGFloat = 10
-            let showSidePane = !compact && geometry.size.width >= minimumListWidth + preferredSideWidth + dividerWidth
-            let sideWidth: CGFloat = showSidePane ? min(preferredSideWidth, max(280, geometry.size.width - minimumListWidth - dividerWidth)) : 0
-            let amountsVisible = showAmounts
-            let activeDividerWidth: CGFloat = showSidePane ? dividerWidth : 1
-            let listPaneWidth = max(1, geometry.size.width - sideWidth - activeDividerWidth)
-            let preferredNameWidth: CGFloat = min(max(CGFloat(overviewNameColumnWidth), 190), 420)
-            let preferredAmountWidth: CGFloat = min(max(CGFloat(overviewAmountColumnWidth), 90), 180)
-            let preferredDueDateWidth: CGFloat = min(max(CGFloat(overviewDueDateColumnWidth), 120), 240)
-            let preferredLastPaidWidth: CGFloat = min(max(CGFloat(overviewLastPaidColumnWidth), 110), 240)
-            let columnSpacing = CGFloat(amountsVisible ? 4 : 3) * 8
-            let fixedColumnWidth = 42 + (amountsVisible ? 0 : 0) + columnSpacing
-            let availableColumnWidth = max(1, listPaneWidth - 40 - fixedColumnWidth)
-            let preferredFlexibleWidth = preferredNameWidth +
-                (amountsVisible ? preferredAmountWidth : 0) +
-                preferredDueDateWidth +
-                preferredLastPaidWidth
-            let compression = min(1, availableColumnWidth / max(preferredFlexibleWidth, 1))
-            let nameWidth: CGFloat = max(130, preferredNameWidth * compression)
-            let amountWidth: CGFloat = amountsVisible ? max(76, preferredAmountWidth * compression) : 0
-            let dueDateWidth: CGFloat = max(118, preferredDueDateWidth * compression)
-            let lastPaidWidth: CGFloat = max(82, preferredLastPaidWidth * compression)
-            let columnContentWidth = 42 + nameWidth + (amountsVisible ? amountWidth : 0)
-                + dueDateWidth + lastPaidWidth + columnSpacing
-            let tableWidth = max(listPaneWidth, columnContentWidth + 40)
-            let rowWidth = max(1, tableWidth - 20)
-            let maxHorizontalOffset = max(0, tableWidth - listPaneWidth)
-
-            HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    listToolbar(compact: compact)
-                    VStack(spacing: 0) {
-                        ZStack(alignment: .topLeading) {
-                            VStack(spacing: 0) {
-                                columnHeader(
-                                    compact: compact,
-                                    amountsVisible: amountsVisible,
-                                    nameWidth: nameWidth,
-                                    amountWidth: amountWidth,
-                                    dueDateWidth: dueDateWidth,
-                                    lastPaidWidth: lastPaidWidth
-                                )
-                                if visibleBills.isEmpty {
-                                    EmptyState(
-                                        title: "No bills here",
-                                        message: "Try another section or add a new bill.",
-                                        icon: filter.icon
-                                    )
-                                } else {
-                                    ScrollView(.vertical) {
-                                        ZStack(alignment: .top) {
-                                            Color.clear
-                                                .contentShape(Rectangle())
-                                                .onTapGesture { selectedBillID = nil }
-
-                                            LazyVStack(spacing: 2) {
-                                                ForEach(visibleBills) { bill in
-                                                    desktopBillButton(
-                                                        bill,
-                                                        compact: compact,
-                                                        amountsVisible: amountsVisible,
-                                                        nameWidth: nameWidth,
-                                                        amountWidth: amountWidth,
-                                                        dueDateWidth: dueDateWidth,
-                                                        lastPaidWidth: lastPaidWidth,
-                                                        rowWidth: rowWidth
-                                                    )
-                                                }
-                                            }
-                                            .padding(10)
-                                            .frame(width: rowWidth, alignment: .topLeading)
-                                        }
-                                        .frame(width: rowWidth, alignment: .topLeading)
-                                        .frame(minHeight: geometry.size.height - 125, alignment: .topLeading)
-                                    }
-                                }
-                            }
-                            .frame(width: tableWidth, height: geometry.size.height - (maxHorizontalOffset > 0 ? 72 : 54), alignment: .top)
-                            .offset(x: -min(horizontalScrollOffset, maxHorizontalOffset))
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .clipped()
-                        .gesture(horizontalTableDragGesture(maxOffset: maxHorizontalOffset))
-
-                        if maxHorizontalOffset > 0 {
-                            HorizontalTableScrollBar(
-                                offset: $horizontalScrollOffset,
-                                maxOffset: maxHorizontalOffset
-                            )
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 5)
-                            .background(Color.ledgerlyListSurface)
-                            .overlay(alignment: .top) {
-                                Rectangle()
-                                    .fill(Color.ledgerlyDivider)
-                                    .frame(height: 1)
-                            }
-                        }
+        billList
+            .navigationTitle(filter.rawValue)
+            .navigationSubtitle(visibleBills.count == 1 ? "1 bill" : "\(visibleBills.count) bills")
+            .searchable(text: $searchText, prompt: "Search bills")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showingAddBill = true
+                    } label: {
+                        Label("Add Bill", systemImage: "plus")
                     }
-                    .onChange(of: maxHorizontalOffset) { newValue in
-                        horizontalScrollOffset = min(horizontalScrollOffset, newValue)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .help("Add Bill")
                 }
-                .frame(maxWidth: .infinity)
-                .background(Color.ledgerlyListSurface)
 
-                if !showSidePane {
-                    Color.clear.frame(width: 1)
-                } else {
-                    Rectangle()
-                        .fill(Color.clear)
-                        .frame(width: 10)
-                        .contentShape(Rectangle())
-                        .overlay(alignment: .center) {
-                            Rectangle()
-                                .fill(Color.ledgerlyDivider.opacity(0.42))
-                                .frame(width: 1)
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        if let bill = selectedBill {
+                            paymentRequest = PaymentRequest(bill: bill, mode: .full)
                         }
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { value in
-                                    let proposed = sideWidth - value.translation.width
-                                    overviewRightPaneWidth = Double(min(max(proposed, 280), 340))
-                                }
-                        )
+                    } label: {
+                        Label("Log Payment", systemImage: "checkmark.circle")
+                    }
+                    .keyboardShortcut("l", modifiers: .command)
+                    .disabled(selectedBill.map { $0.isArchived || $0.status == .paid } ?? true)
+                    .help("Log Payment for the Selected Bill (\u{2318}L)")
                 }
 
-                if showSidePane {
-                    if let bill = selectedBill {
-                        BillInspector(
-                        bill: bill,
-                        onPay: { paymentRequest = PaymentRequest(bill: bill, mode: .full) },
-                        onPartialPay: { paymentRequest = PaymentRequest(bill: bill, mode: .partial) },
-                        onEdit: { editingBill = bill },
-                        onClose: { selectedBillID = nil }
-                    )
-                        .frame(width: sideWidth)
-                    } else {
-                        MonthlyCalendarPanel(bills: store.bills.filter { !$0.isArchived })
-                            .frame(width: sideWidth)
+            }
+            .modifier(BillDetailPane(isPresented: .constant(true)) {
+                detailPane
+            })
+            .sheet(item: $editingBill) { bill in
+                BillEditorView(existingBill: bill)
+                    .environmentObject(store)
+            }
+            .sheet(item: $paymentRequest) { request in
+                PaymentView(bill: request.bill, mode: request.mode)
+                    .environmentObject(store)
+            }
+            .alert("Delete Bill?", isPresented: deleteBillAlertBinding, presenting: billPendingDeletion) { bill in
+                Button("Cancel", role: .cancel) {
+                    billPendingDeletion = nil
+                }
+                Button("Delete", role: .destructive) {
+                    if selectedBillID == bill.id {
+                        selectedBillID = nil
                     }
+                    store.delete(bill)
+                    billPendingDeletion = nil
                 }
+            } message: { bill in
+                Text("Are you sure you want to permanently delete \"\(bill.name)\"? This action cannot be undone.")
             }
-        }
-        .background(Color.ledgerlyWorkspace)
-        .sheet(item: $editingBill) { bill in
-            BillEditorView(existingBill: bill)
-                .environmentObject(store)
-        }
-        .sheet(item: $paymentRequest) { request in
-            PaymentView(bill: request.bill, mode: request.mode)
-                .environmentObject(store)
-        }
-        .alert("Delete Bill?", isPresented: deleteBillAlertBinding, presenting: billPendingDeletion) { bill in
-            Button("Cancel", role: .cancel) {
-                billPendingDeletion = nil
+            .onChange(of: filter) { _ in
+                selectedBillID = nil
             }
-            Button("Delete", role: .destructive) {
-                if selectedBillID == bill.id {
-                    selectedBillID = nil
+    }
+
+    // MARK: List
+
+    @ViewBuilder
+    private var billList: some View {
+        if visibleBills.isEmpty {
+            EmptyState(
+                title: "No bills here",
+                message: "Try another section or add a new bill.",
+                icon: filter.icon
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if showAmounts {
+            Table(visibleBills, selection: $selectedBillID, sortOrder: $sortOrder) {
+                TableColumn("Name", value: \.name) { bill in
+                    nameCell(bill)
                 }
-                store.delete(bill)
-                billPendingDeletion = nil
+                .width(min: 190, ideal: 240)
+
+                TableColumn("Amount", value: \.cycleRemainingAmount) { bill in
+                    Text(bill.cycleBalanceDisplayText)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                }
+                .width(min: 80, ideal: 120)
+
+                TableColumn("Due Date", value: \.dueDate) { bill in
+                    dueDateCell(bill)
+                }
+                .width(min: 120, ideal: 190)
+
+                TableColumn("Last Paid", value: \.lastPaidSortDate) { bill in
+                    lastPaidCell(bill)
+                }
+                .width(min: 100, ideal: 130)
             }
-        } message: { bill in
-            Text("Are you sure you want to permanently delete \"\(bill.name)\"? This action cannot be undone.")
-        }
-        .onChange(of: filter) { _ in
-            selectedBillID = nil
+            .contextMenu(forSelectionType: Bill.ID.self) { ids in
+                rowMenu(for: ids)
+            } primaryAction: { ids in
+                editBill(for: ids)
+            }
+        } else {
+            Table(visibleBills, selection: $selectedBillID, sortOrder: $sortOrder) {
+                TableColumn("Name", value: \.name) { bill in
+                    nameCell(bill)
+                }
+                .width(min: 190, ideal: 240)
+
+                TableColumn("Due Date", value: \.dueDate) { bill in
+                    dueDateCell(bill)
+                }
+                .width(min: 120, ideal: 190)
+
+                TableColumn("Last Paid", value: \.lastPaidSortDate) { bill in
+                    lastPaidCell(bill)
+                }
+                .width(min: 100, ideal: 130)
+            }
+            .contextMenu(forSelectionType: Bill.ID.self) { ids in
+                rowMenu(for: ids)
+            } primaryAction: { ids in
+                editBill(for: ids)
+            }
         }
     }
 
-    private func desktopBillButton(
-        _ bill: Bill,
-        compact: Bool,
-        amountsVisible: Bool,
-        nameWidth: CGFloat,
-        amountWidth: CGFloat,
-        dueDateWidth: CGFloat,
-        lastPaidWidth: CGFloat,
-        rowWidth: CGFloat
-    ) -> some View {
-        Button {
-            selectedBillID = bill.id
-        } label: {
-            DesktopBillRow(
+    private func nameCell(_ bill: Bill) -> some View {
+        HStack(spacing: 10) {
+            BillListIcon(
                 bill: bill,
-                isSelected: bill.id == selectedBill?.id,
-                compact: compact,
-                amountsVisible: amountsVisible,
-                nameWidth: nameWidth,
-                amountWidth: amountWidth,
-                dueDateWidth: dueDateWidth,
-                lastPaidWidth: lastPaidWidth,
-                rowWidth: rowWidth
+                categoryIcon: Self.categoryIcon(for: bill),
+                useWebsiteIcon: showBillerWebsiteIcons,
+                size: 32
             )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(bill.name)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                Text(bill.frequency.displayText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
-        .buttonStyle(.plain)
-        .contextMenu {
+        .padding(.vertical, 2)
+    }
+
+    private func dueDateCell(_ bill: Bill) -> some View {
+        HStack(spacing: 8) {
+            Capsule()
+                .fill(bill.dueDateColor)
+                .frame(width: 6, height: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(bill.dueLabel)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                Text(bill.dueDate.formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.leading, 8)
+    }
+
+    private func lastPaidCell(_ bill: Bill) -> some View {
+        Text(bill.lastPaidDate?.formatted(date: .abbreviated, time: .omitted) ?? "—")
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+    }
+
+    /// Double-click (or Return) on a row opens the editor.
+    private func editBill(for ids: Set<Bill.ID>) {
+        guard let id = ids.first,
+              let bill = store.bills.first(where: { $0.id == id }),
+              !bill.isArchived
+        else { return }
+        editingBill = bill
+    }
+
+    @ViewBuilder
+    private func rowMenu(for ids: Set<Bill.ID>) -> some View {
+        if let id = ids.first, let bill = store.bills.first(where: { $0.id == id }) {
             if bill.isArchived {
                 Button("Unarchive") { store.unarchive(bill) }
                 Button("Delete Bill…", role: .destructive) { billPendingDeletion = bill }
@@ -290,6 +258,23 @@ struct OverviewView: View {
         }
     }
 
+    // MARK: Details pane
+
+    @ViewBuilder
+    private var detailPane: some View {
+        if let bill = selectedBill {
+            BillInspector(
+                bill: bill,
+                onPay: { paymentRequest = PaymentRequest(bill: bill, mode: .full) },
+                onPartialPay: { paymentRequest = PaymentRequest(bill: bill, mode: .partial) },
+                onEdit: { editingBill = bill },
+                onClose: { selectedBillID = nil }
+            )
+        } else {
+            MonthlyCalendarPanel(bills: store.bills.filter { !$0.isArchived })
+        }
+    }
+
     private var deleteBillAlertBinding: Binding<Bool> {
         Binding(
             get: { billPendingDeletion != nil },
@@ -301,266 +286,7 @@ struct OverviewView: View {
         )
     }
 
-    private func listToolbar(compact: Bool) -> some View {
-        HStack(spacing: 12) {
-            Button {
-                showingAddBill = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.title3)
-                    .frame(width: 24, height: 24)
-            }
-            .ledgerlyGlassButton()
-            .help("Add Bill")
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(filter.rawValue)
-                    .font(.headline)
-            }
-            Text("\(visibleBills.count)")
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(.secondary.opacity(0.12), in: Capsule())
-            Spacer()
-            TextField("Search", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: compact ? 145 : 230)
-        }
-        .padding(.horizontal, 24)
-        .frame(height: 54)
-        .background(Color.ledgerlyListSurface)
-    }
-
-    private func columnHeader(
-        compact: Bool,
-        amountsVisible: Bool,
-        nameWidth: CGFloat,
-        amountWidth: CGFloat,
-        dueDateWidth: CGFloat,
-        lastPaidWidth: CGFloat
-    ) -> some View {
-        HStack(spacing: 8) {
-            Color.clear.frame(width: 42, height: 1)
-
-            resizableColumnHeader(
-                "Name",
-                width: nameWidth,
-                alignment: .leading,
-                gesture: nameResizeGesture(currentWidth: nameWidth)
-            )
-
-            if amountsVisible {
-                resizableColumnHeader(
-                    "Amount",
-                    width: amountWidth,
-                    alignment: .leading,
-                    gesture: amountResizeGesture(currentWidth: amountWidth)
-                )
-            }
-
-            resizableColumnHeader(
-                "Due Date",
-                width: dueDateWidth,
-                alignment: .leading,
-                gesture: dueDateResizeGesture(currentWidth: dueDateWidth)
-            )
-
-            resizableColumnHeader(
-                "Last Paid",
-                width: lastPaidWidth,
-                alignment: .leading,
-                gesture: lastPaidResizeGesture(currentWidth: lastPaidWidth)
-            )
-        }
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(Color.ledgerlyPrimaryText)
-        .padding(.horizontal, 20)
-        .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32, alignment: .leading)
-        .background(Color.ledgerlyToolbar)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Color.ledgerlyDivider)
-                .frame(height: 1)
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.ledgerlyDivider)
-                .frame(height: 1)
-        }
-    }
-
-    private func resizableColumnHeader<G: Gesture>(
-        _ title: String,
-        width: CGFloat,
-        alignment: Alignment,
-        gesture: G
-    ) -> some View {
-        Text(title)
-            .frame(width: width, alignment: alignment)
-            .overlay(alignment: .trailing) {
-                resizeHandle
-                    .offset(x: 9)
-                    .gesture(gesture)
-            }
-    }
-
-    private var resizeHandle: some View {
-        ZStack {
-            Color.clear
-                .frame(width: 18, height: 24)
-            Rectangle()
-                .fill(Color.ledgerlyDivider)
-                .frame(width: 1, height: 18)
-        }
-        .frame(width: 18, height: 24)
-        .contentShape(Rectangle())
-        .help("Drag to resize column")
-    }
-
-    private func nameResizeGesture(currentWidth: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                if nameColumnDragStartWidth == nil {
-                    nameColumnDragStartWidth = currentWidth
-                }
-                guard let start = nameColumnDragStartWidth else { return }
-                overviewNameColumnWidth = Double(min(max(start + value.translation.width, 190), 420))
-            }
-            .onEnded { _ in
-                nameColumnDragStartWidth = nil
-            }
-    }
-
-    private func amountResizeGesture(currentWidth: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                if amountColumnDragStartWidth == nil {
-                    amountColumnDragStartWidth = currentWidth
-                }
-                guard let start = amountColumnDragStartWidth else { return }
-                overviewAmountColumnWidth = Double(min(max(start + value.translation.width, 90), 180))
-            }
-            .onEnded { _ in
-                amountColumnDragStartWidth = nil
-            }
-    }
-
-    private func dueDateResizeGesture(currentWidth: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                if dueDateColumnDragStartWidth == nil {
-                    dueDateColumnDragStartWidth = currentWidth
-                }
-                guard let start = dueDateColumnDragStartWidth else { return }
-                overviewDueDateColumnWidth = Double(min(max(start + value.translation.width, 120), 240))
-            }
-            .onEnded { _ in
-                dueDateColumnDragStartWidth = nil
-            }
-    }
-
-    private func lastPaidResizeGesture(currentWidth: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                if lastPaidColumnDragStartWidth == nil {
-                    lastPaidColumnDragStartWidth = currentWidth
-                }
-                guard let start = lastPaidColumnDragStartWidth else { return }
-                overviewLastPaidColumnWidth = Double(min(max(start + value.translation.width, 110), 240))
-            }
-            .onEnded { _ in
-                lastPaidColumnDragStartWidth = nil
-            }
-    }
-
-    private func horizontalTableDragGesture(maxOffset: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 8)
-            .onChanged { value in
-                if horizontalDragStartOffset == nil {
-                    horizontalDragStartOffset = horizontalScrollOffset
-                }
-                guard let start = horizontalDragStartOffset else { return }
-                horizontalScrollOffset = min(max(start - value.translation.width, 0), maxOffset)
-            }
-            .onEnded { _ in
-                horizontalDragStartOffset = nil
-            }
-    }
-}
-struct DesktopBillRow: View {
-    @EnvironmentObject private var store: BillStore
-    let bill: Bill
-    let isSelected: Bool
-    let compact: Bool
-    let amountsVisible: Bool
-    let nameWidth: CGFloat
-    let amountWidth: CGFloat
-    let dueDateWidth: CGFloat
-    let lastPaidWidth: CGFloat
-    let rowWidth: CGFloat
-    @AppStorage("showAmounts") private var showAmounts = true
-    @AppStorage("showBillerWebsiteIcons") private var showBillerWebsiteIcons = false
-
-    var body: some View {
-        HStack(spacing: 8) {
-            BillListIcon(
-                bill: bill,
-                categoryIcon: categoryIcon,
-                useWebsiteIcon: showBillerWebsiteIcons
-            )
-            .environmentObject(store)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(bill.name)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                HStack(spacing: 5) {
-                    Text(bill.frequency.displayText)
-                }
-                .font(.caption)
-                .foregroundStyle(isSelected ? Color.white.opacity(0.82) : Color.secondary)
-            }
-            .frame(width: nameWidth, alignment: .leading)
-
-            if amountsVisible {
-                Text(bill.cycleBalanceDisplayText)
-                    .fontWeight(.semibold)
-                    .frame(width: amountWidth, alignment: .leading)
-            }
-
-            HStack(spacing: 9) {
-                Capsule()
-                    .fill(bill.dueDateColor)
-                    .frame(width: 8, height: 30)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(bill.dueLabel)
-                        .fontWeight(.semibold)
-                    Text(bill.dueDate.formatted(date: .abbreviated, time: .omitted))
-                        .font(.caption)
-                        .foregroundStyle(isSelected ? Color.white.opacity(0.82) : Color.secondary)
-                }
-            }
-            .frame(width: dueDateWidth, alignment: .leading)
-
-            Text(bill.lastPaidDate?.formatted(date: .abbreviated, time: .omitted) ?? "—")
-                .foregroundStyle(isSelected ? Color.white.opacity(0.82) : Color.secondary)
-                .frame(width: lastPaidWidth, alignment: .leading)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(width: rowWidth, alignment: .leading)
-        .foregroundStyle(isSelected ? Color.white : Color.primary)
-        .background(
-            isSelected ? Color(hex: "#4E8FD3") : Color.clear,
-            in: RoundedRectangle(cornerRadius: 9)
-        )
-        .contentShape(Rectangle())
-    }
-
-    private var categoryIcon: String {
+    private static func categoryIcon(for bill: Bill) -> String {
         switch bill.category {
         case "Home": return "house.fill"
         case "Utilities": return "bolt.fill"
@@ -574,37 +300,55 @@ struct DesktopBillRow: View {
         }
     }
 }
-private struct HorizontalTableScrollBar: View {
-    @Binding var offset: CGFloat
-    let maxOffset: CGFloat
 
-    var body: some View {
-        GeometryReader { geometry in
-            let thumbWidth = max(54, min(geometry.size.width, geometry.size.width * 0.34))
-            let travel = max(1, geometry.size.width - thumbWidth)
-            let progress = maxOffset <= 0 ? 0 : min(max(offset / maxOffset, 0), 1)
+/// Trailing details pane. Uses the system inspector (macOS 14+), which sits in
+/// the Liquid Glass layer on macOS 26; falls back to a plain split on macOS 13.
+/// Set to false to go back to the system inspector on macOS 26.
+private let useFloatingDetailPane = true
 
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.ledgerlyDivider.opacity(0.45))
-                    .frame(height: 7)
+private struct BillDetailPane<Pane: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let pane: Pane
 
-                Capsule()
-                    .fill(Color.ledgerlySecondaryText.opacity(0.78))
-                    .frame(width: thumbWidth, height: 7)
-                    .offset(x: travel * progress)
+    init(isPresented: Binding<Bool>, @ViewBuilder pane: () -> Pane) {
+        self._isPresented = isPresented
+        self.pane = pane()
+    }
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *), useFloatingDetailPane {
+            // Floating glass card matching the sidebar panel.
+            let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+            HStack(spacing: 0) {
+                content
+                if isPresented {
+                    pane
+                        .frame(width: 330)
+                        .clipShape(shape)
+                        .glassEffect(.regular, in: shape)
+                        .padding(.leading, 4)
+                        .padding(.trailing, 10)
+                        .padding(.vertical, 10)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        let next = min(max(value.location.x - thumbWidth / 2, 0), travel)
-                        offset = min(maxOffset, max(0, (next / travel) * maxOffset))
-                    }
-            )
+            .animation(.smooth, value: isPresented)
+        } else if #available(macOS 14.0, *) {
+            content
+                .inspector(isPresented: $isPresented) {
+                    pane
+                        .inspectorColumnWidth(min: 280, ideal: 330, max: 400)
+                }
+        } else {
+            HStack(spacing: 0) {
+                content
+                if isPresented {
+                    Divider()
+                    pane
+                        .frame(width: 330)
+                }
+            }
         }
-        .frame(height: 14)
-        .help("Drag to view more bill columns.")
     }
 }
 private struct BillListIcon: View {
@@ -612,32 +356,33 @@ private struct BillListIcon: View {
     let bill: Bill
     let categoryIcon: String
     let useWebsiteIcon: Bool
+    var size: CGFloat = 42
     @State private var customLogoImage: NSImage?
     @State private var websiteBrand: WebsiteBrandAsset?
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
                 .fill(backgroundColor)
 
             if let customLogoImage {
                 Image(nsImage: customLogoImage)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 42, height: 42)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: size * 0.17, style: .continuous))
             } else if useWebsiteIcon, let websiteBrand {
                 Image(nsImage: websiteBrand.image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 42, height: 42)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: size * 0.17, style: .continuous))
             } else {
                 Image(systemName: categoryIcon)
                     .foregroundStyle(Color(hex: bill.colorHex))
             }
         }
-        .frame(width: 42, height: 42)
+        .frame(width: size, height: size)
         .task(id: taskID) {
             await loadIconAssets()
         }
@@ -650,7 +395,7 @@ private struct BillListIcon: View {
 
     private var backgroundColor: Color {
         if customLogoImage != nil {
-            return Color.ledgerlyToolbar
+            return Color.ledgerlyReportCard
         }
         if useWebsiteIcon, let accent = websiteBrand?.accent {
             return accent.opacity(0.18)
@@ -786,7 +531,8 @@ struct MonthlyCalendarPanel: View {
                 columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7),
                 spacing: 10
             ) {
-                ForEach(Calendar.current.veryShortWeekdaySymbols, id: \.self) { weekday in
+                // Index as the id: the one-letter symbols repeat (T, T, S, S).
+                ForEach(Array(Calendar.current.veryShortWeekdaySymbols.enumerated()), id: \.offset) { _, weekday in
                     Text(weekday.uppercased())
                         .font(.caption2.bold())
                         .foregroundStyle(.secondary)
@@ -907,7 +653,6 @@ struct MonthlyCalendarPanel: View {
                     .padding(20)
             }
         }
-        .background(Color.ledgerlyWorkspace)
     }
 
     private var emptyBillsMessage: String {
@@ -1050,5 +795,12 @@ struct MonthlyMoneySummary: View {
                 .foregroundStyle(amountColor)
                 .monospacedDigit()
         }
+    }
+}
+
+private extension Bill {
+    /// Table sort key; bills that have never been paid sort as oldest.
+    var lastPaidSortDate: Date {
+        lastPaidDate ?? .distantPast
     }
 }
