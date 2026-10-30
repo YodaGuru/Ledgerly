@@ -33,6 +33,7 @@ struct PaymentView: View {
     let bill: Bill
     let mode: PaymentLoggingMode
     @State private var amount: Double
+    @State private var paymentDate = Date()
     @State private var confirmation = ""
     @State private var notes = ""
     @State private var attachmentURLs: [URL] = []
@@ -56,6 +57,12 @@ struct PaymentView: View {
                     .foregroundStyle(.secondary)
             }
             TextField("Amount", value: $amount, format: .currency(code: Locale.current.currency?.identifier ?? "USD"))
+            DatePicker(
+                "Payment date",
+                selection: $paymentDate,
+                in: ...Date(),
+                displayedComponents: .date
+            )
             TextField("Confirmation number (optional)", text: $confirmation)
             TextField("Notes (optional)", text: $notes, axis: .vertical)
                 .lineLimit(2...4)
@@ -118,6 +125,7 @@ struct PaymentView: View {
                     store.markPaid(
                         bill,
                         amount: amount,
+                        date: paymentDate,
                         confirmation: confirmation,
                         notes: notes,
                         attachments: copiedAttachments,
