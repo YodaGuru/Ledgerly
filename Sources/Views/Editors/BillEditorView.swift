@@ -27,6 +27,8 @@ struct BillEditorView: View {
     @State private var reminderDays: Int
     @State private var isAutoPay: Bool
     @State private var customLogo: BillCustomLogo?
+    @State private var tracksBalanceOwed: Bool
+    @State private var balanceOwed: Double
     @State private var showingLogoImporter = false
     @State private var logoImportError: String?
 
@@ -54,6 +56,8 @@ struct BillEditorView: View {
         _reminderDays = State(initialValue: existingBill?.reminderDays ?? savedReminderDays)
         _isAutoPay = State(initialValue: existingBill?.isAutoPay ?? false)
         _customLogo = State(initialValue: existingBill?.customLogo)
+        _tracksBalanceOwed = State(initialValue: existingBill?.tracksBalanceOwed ?? false)
+        _balanceOwed = State(initialValue: existingBill?.remainingBalanceOwed ?? 0)
     }
 
     var body: some View {
@@ -65,7 +69,7 @@ struct BillEditorView: View {
                 Button("Cancel") { dismiss() }
                 Button(existingBill == nil ? "Add Bill" : "Save") { save() }
                     .ledgerlyGlassButton(prominent: true)
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || amount < 0)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || amount < 0 || (tracksBalanceOwed && balanceOwed < 0))
             }
             .padding(20)
 
@@ -83,6 +87,19 @@ struct BillEditorView: View {
                     Picker("Category", selection: $category) {
                         ForEach(categories, id: \.self) { Text($0).tag($0) }
                     }
+                }
+
+                Section {
+                    Toggle("Track balance owed", isOn: $tracksBalanceOwed)
+                    if tracksBalanceOwed {
+                        TextField("Balance owed", value: $balanceOwed, format: .currency(code: Locale.current.currency?.identifier ?? "USD"))
+                    }
+                } header: {
+                    Text("Balance")
+                } footer: {
+                    Text("For credit cards and loans. Enter how much is owed today; each payment you log lowers it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Appearance") {
@@ -142,7 +159,7 @@ struct BillEditorView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 540, height: 650)
+        .frame(width: 540, height: 700)
         .fileImporter(
             isPresented: $showingLogoImporter,
             allowedContentTypes: [.image],
@@ -153,7 +170,7 @@ struct BillEditorView: View {
     }
 
     private func save() {
-        let bill = Bill(
+        var bill = Bill(
             id: existingBill?.id ?? UUID(),
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             amount: amount,
@@ -170,8 +187,17 @@ struct BillEditorView: View {
             payments: existingBill?.payments ?? [],
             attachments: existingBill?.attachments ?? [],
             customLogo: customLogo,
-            isArchived: existingBill?.isArchived ?? false
+            isArchived: existingBill?.isArchived ?? false,
+            balanceOwed: existingBill?.balanceOwed,
+            balanceExcludedPaymentIDs: existingBill?.balanceExcludedPaymentIDs ?? []
         )
+        if !tracksBalanceOwed {
+            bill = bill.settingBalanceOwed(nil)
+        } else if let current = existingBill?.remainingBalanceOwed, abs(current - balanceOwed) < 0.005 {
+            // Unchanged: keep the original balance and payment history.
+        } else {
+            bill = bill.settingBalanceOwed(balanceOwed)
+        }
         if existingBill == nil {
             store.add(bill)
         } else {

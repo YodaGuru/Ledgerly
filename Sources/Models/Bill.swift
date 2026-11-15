@@ -36,6 +36,11 @@ struct Bill: Identifiable, Codable, Hashable {
     var attachments: [BillAttachment]
     var customLogo: BillCustomLogo?
     var isArchived: Bool
+    /// Optional total owed on the account (for example a credit card or loan).
+    /// Payments logged after the balance was set reduce it.
+    var balanceOwed: Double?
+    /// Payments that already existed when `balanceOwed` was entered; they don't reduce it.
+    var balanceExcludedPaymentIDs: [UUID]
 
     init(
         id: UUID = UUID(),
@@ -54,7 +59,9 @@ struct Bill: Identifiable, Codable, Hashable {
         payments: [Payment],
         attachments: [BillAttachment] = [],
         customLogo: BillCustomLogo? = nil,
-        isArchived: Bool = false
+        isArchived: Bool = false,
+        balanceOwed: Double? = nil,
+        balanceExcludedPaymentIDs: [UUID] = []
     ) {
         self.id = id
         self.name = name
@@ -73,11 +80,14 @@ struct Bill: Identifiable, Codable, Hashable {
         self.attachments = attachments
         self.customLogo = customLogo
         self.isArchived = isArchived
+        self.balanceOwed = balanceOwed
+        self.balanceExcludedPaymentIDs = balanceExcludedPaymentIDs
     }
 
     enum CodingKeys: String, CodingKey {
         case id, name, amount, isVariableAmount, dueDate, frequency, category, colorHex, website
         case notes, isReminderEnabled, reminderDays, isAutoPay, payments, attachments, customLogo, isArchived
+        case balanceOwed, balanceExcludedPaymentIDs
     }
 
     init(from decoder: Decoder) throws {
@@ -99,6 +109,41 @@ struct Bill: Identifiable, Codable, Hashable {
         attachments = try values.decodeIfPresent([BillAttachment].self, forKey: .attachments) ?? []
         customLogo = try values.decodeIfPresent(BillCustomLogo.self, forKey: .customLogo)
         isArchived = try values.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+        balanceOwed = try values.decodeIfPresent(Double.self, forKey: .balanceOwed)
+        balanceExcludedPaymentIDs = try values.decodeIfPresent([UUID].self, forKey: .balanceExcludedPaymentIDs) ?? []
+    }
+
+    var tracksBalanceOwed: Bool {
+        balanceOwed != nil
+    }
+
+    /// Amount paid toward `balanceOwed` since it was entered.
+    var paidTowardBalance: Double {
+        let excluded = Set(balanceExcludedPaymentIDs)
+        return payments
+            .filter { !excluded.contains($0.id) }
+            .reduce(0) { $0 + $1.amount }
+    }
+
+    /// What is still owed on the account, or nil when no balance is tracked.
+    var remainingBalanceOwed: Double? {
+        guard let balanceOwed else { return nil }
+        return max(balanceOwed - paidTowardBalance, 0)
+    }
+
+    var remainingBalanceDisplayText: String? {
+        guard let remainingBalanceOwed else { return nil }
+        if remainingBalanceOwed <= 0.005 { return "Paid off" }
+        return "\(remainingBalanceOwed.currency) owed"
+    }
+
+    /// Returns a copy whose balance owed is reset to `amount` as of now,
+    /// so only payments logged from here on reduce it.
+    func settingBalanceOwed(_ amount: Double?) -> Bill {
+        var copy = self
+        copy.balanceOwed = amount.map { max($0, 0) }
+        copy.balanceExcludedPaymentIDs = amount == nil ? [] : payments.map(\.id)
+        return copy
     }
 
     var isPaidForCurrentCycle: Bool {

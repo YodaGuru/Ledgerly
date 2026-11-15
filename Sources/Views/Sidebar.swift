@@ -13,6 +13,7 @@ import CoreImage
 /// custom backgrounds or glass effects are applied here.
 struct Sidebar: View {
     @EnvironmentObject private var store: BillStore
+    @EnvironmentObject private var updateChecker: UpdateChecker
     @Binding var selection: SidebarItem
     @AppStorage("showAmounts") private var showAmounts = true
     @AppStorage("showPaidBills") private var showPaidBills = true
@@ -59,6 +60,46 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let update = updateChecker.availableUpdate {
+                updateAvailableButton(update)
+            }
+        }
+        .listStyle(.sidebar)
+    }
+
+    /// Pinned to the bottom of the sidebar, only while a newer release exists.
+    private func updateAvailableButton(_ update: UpdateChecker.AvailableUpdate) -> some View {
+        Button {
+            updateChecker.aboutRevealRequested = true
+            selection = .settings
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color(hex: "#4E8FD3"))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Update Available")
+                        .fontWeight(.semibold)
+                    Text("Version \(update.version)")
+                        .font(.caption)
+                        .foregroundStyle(Color.primary.opacity(0.7))
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color(hex: "#4E8FD3").opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 10)
+        .padding(.top, 4)
+        .help("Ledgerly \(update.version) is available. Open Settings to update.")
     }
 
     private var syncButton: some View {

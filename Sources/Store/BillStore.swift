@@ -31,8 +31,10 @@ final class BillStore: ObservableObject {
         didSet {
             scheduleSave()
             updateDockBadge()
+            scheduleReminderRefresh()
         }
     }
+    private var reminderRefreshTask: Task<Void, Never>?
     @Published var incomes: [IncomeSource] = [] {
         didSet { scheduleIncomeSave() }
     }
@@ -506,7 +508,6 @@ final class BillStore: ObservableObject {
         }
         removeCustomLogoFile(bill.customLogo)
         bills.removeAll { $0.id == bill.id }
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [bill.id.uuidString])
     }
 
     func markPaid(
@@ -729,7 +730,11 @@ final class BillStore: ObservableObject {
         }
     }
 
+    /// Rebuilds every pending Ledgerly reminder from the current bills.
+    /// Reminders are delivered by macOS, so they arrive even when Ledgerly is closed.
     func refreshReminders() {
+        reminderRefreshTask?.cancel()
+        reminderRefreshTask = nil
         let center = UNUserNotificationCenter.current()
 
         guard notificationsAreEnabled else {
@@ -738,15 +743,83 @@ final class BillStore: ObservableObject {
         }
 
         center.getNotificationSettings { settings in
-            guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
-                return
-            }
-
+            let status = settings.authorizationStatus
             Task { @MainActor in
-                for bill in self.bills where !bill.isArchived {
-                    self.scheduleReminder(for: bill)
+                switch status {
+                case .authorized, .provisional:
+                    self.rescheduleAllReminders()
+                case .notDetermined:
+                    // Ask once; on approval requestNotifications() calls back into here.
+                    self.requestNotifications()
+                default:
+                    center.removeAllPendingNotificationRequests()
                 }
             }
+        }
+    }
+
+    /// Coalesces the many small bill edits (payments, archive, sync) into one refresh.
+    private func scheduleReminderRefresh() {
+        reminderRefreshTask?.cancel()
+        reminderRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            self?.refreshReminders()
+        }
+    }
+
+    private static let maxPendingReminders = 60
+    private static let reminderOccurrencesPerBill = 6
+
+    /// Schedules reminders for the next few due dates of every bill, not just the
+    /// next one, so they keep coming if Ledgerly stays closed for a while. macOS caps
+    /// pending notifications per app, so only the soonest ones are kept.
+    private func rescheduleAllReminders() {
+        let center = UNUserNotificationCenter.current()
+        let now = Date()
+        var upcoming: [(fireDate: Date, bill: Bill, dueDate: Date, isCurrentCycle: Bool)] = []
+
+        for bill in bills where !bill.isArchived && bill.isReminderEnabled {
+            for (offset, dueDate) in upcomingDueDates(for: bill).enumerated() {
+                let isCurrentCycle = offset == 0
+                if isCurrentCycle && bill.isPaidForCurrentCycle { continue }
+                guard let fireDate = reminderDate(forDueDate: dueDate, reminderDays: bill.reminderDays),
+                      fireDate > now else { continue }
+                upcoming.append((fireDate, bill, dueDate, isCurrentCycle))
+            }
+        }
+        upcoming.sort { $0.fireDate < $1.fireDate }
+
+        center.removeAllPendingNotificationRequests()
+        for item in upcoming.prefix(Self.maxPendingReminders) {
+            let bill = item.bill
+            let content = UNMutableNotificationContent()
+            content.title = bill.reminderDays == 0 ? "\(bill.name) is due today" : "\(bill.name) is due soon"
+            let amountText = item.isCurrentCycle ? bill.cycleBalanceDisplayText : bill.amountDisplayText
+            content.body = "\(bill.name) is due \(item.dueDate.formatted(date: .abbreviated, time: .omitted)) for \(amountText)."
+            content.sound = .default
+            content.threadIdentifier = bill.id.uuidString
+
+            let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: item.fireDate)
+            let request = UNNotificationRequest(
+                identifier: "\(bill.id.uuidString)-\(Int(item.dueDate.timeIntervalSince1970))",
+                content: content,
+                trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            )
+            center.add(request) { error in
+                if let error {
+                    print("Ledgerly failed to schedule notification for \(bill.name): \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// The bill's current due date followed by its next few repeats.
+    private func upcomingDueDates(for bill: Bill) -> [Date] {
+        guard let component = bill.frequency.calendarComponent else { return [bill.dueDate] }
+        return (0..<Self.reminderOccurrencesPerBill).compactMap { step in
+            // Offset from the original date each time so a 31st doesn't drift to the 28th.
+            Calendar.current.date(byAdding: component, value: bill.frequency.calendarValue * step, to: bill.dueDate)
         }
     }
 
@@ -770,48 +843,16 @@ final class BillStore: ObservableObject {
         }
     }
 
+    /// Any change to a bill rebuilds the whole reminder schedule (debounced).
     private func scheduleReminder(for bill: Bill) {
-        let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: [bill.id.uuidString])
-
-        guard notificationsAreEnabled else { return }
-        guard !bill.isArchived else { return }
-        guard bill.isReminderEnabled else { return }
-
-        center.getNotificationSettings { settings in
-            guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
-                return
-            }
-
-            Task { @MainActor in
-                guard let reminderDate = self.reminderDate(for: bill), reminderDate > Date() else { return }
-
-                let content = UNMutableNotificationContent()
-                content.title = "\(bill.name) is due soon"
-                content.body = "\(bill.name) is due \(bill.dueDate.formatted(date: .abbreviated, time: .omitted)) for \(bill.cycleBalanceDisplayText)."
-                content.sound = .default
-
-                let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: reminderDate)
-                let request = UNNotificationRequest(
-                    identifier: bill.id.uuidString,
-                    content: content,
-                    trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-                )
-
-                center.add(request) { error in
-                    if let error {
-                        print("Ledgerly failed to schedule notification for \(bill.name): \(error.localizedDescription)")
-                    }
-                }
-            }
-        }
+        scheduleReminderRefresh()
     }
 
-    private func reminderDate(for bill: Bill) -> Date? {
+    private func reminderDate(forDueDate dueDate: Date, reminderDays: Int) -> Date? {
         guard let reminderDay = Calendar.current.date(
             byAdding: .day,
-            value: -bill.reminderDays,
-            to: bill.dueDate
+            value: -reminderDays,
+            to: dueDate
         ) else { return nil }
 
         let reminderHour = UserDefaults.standard.object(forKey: "reminderHour") == nil

@@ -198,7 +198,7 @@ struct OverviewView: View {
                 Text(bill.name)
                     .fontWeight(.semibold)
                     .lineLimit(1)
-                Text(bill.frequency.displayText)
+                Text([bill.frequency.displayText, bill.remainingBalanceDisplayText].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

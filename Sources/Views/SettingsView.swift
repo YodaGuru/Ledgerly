@@ -45,6 +45,8 @@ struct SettingsView: View {
     @AppStorage("incomeEnabled") private var incomeEnabled = true
     @AppStorage("showIncomeSummary") private var showIncomeSummary = true
     @AppStorage("passwordProtectionEnabled") private var passwordProtectionEnabled = false
+    @AppStorage(UpdateChecker.automaticChecksKey) private var automaticUpdateChecks = true
+    @EnvironmentObject private var updateChecker: UpdateChecker
     @State private var passwordAction: PasswordAction?
     @State private var storageMoveError: String?
 
@@ -82,6 +84,7 @@ struct SettingsView: View {
 
             Divider()
 
+            ScrollViewReader { scrollProxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     switch selectedTab {
@@ -101,6 +104,9 @@ struct SettingsView: View {
                 }
                 .padding(28)
                 .frame(maxWidth: 760, alignment: .leading)
+            }
+            .onAppear { revealAboutIfRequested(scrollProxy) }
+            .onChange(of: updateChecker.aboutRevealRequested) { _ in revealAboutIfRequested(scrollProxy) }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -341,10 +347,77 @@ struct SettingsView: View {
             }
 
             SettingsGroup(title: "About") {
-                LabeledContent("Ledgerly", value: "Version 3.1.0")
+                LabeledContent("Ledgerly", value: "Version \(updateChecker.currentVersion)")
                 Text("A focused, private bill organizer for macOS.")
                     .foregroundStyle(.secondary)
+
+                Divider()
+
+                if let update = updateChecker.availableUpdate {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.title)
+                            .foregroundStyle(Color(hex: "#4E8FD3"))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Ledgerly \(update.version) is available")
+                                .font(.headline)
+                            if !update.releaseNotes.isEmpty {
+                                Text(update.releaseNotes)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Link("View release notes on GitHub", destination: update.releasePageURL)
+                                .font(.callout)
+                        }
+                    }
+                    HStack {
+                        Button("Update Now") { updateChecker.download(update) }
+                            .ledgerlyGlassButton(prominent: true)
+                        Text("Downloads the new disk image. Open it and drag Ledgerly into Applications.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Toggle("Check GitHub for updates automatically", isOn: $automaticUpdateChecks)
+                HStack {
+                    Button(updateChecker.state == .checking ? "Checking…" : "Check for Updates") {
+                        Task { await updateChecker.check(userInitiated: true) }
+                    }
+                    .ledgerlyGlassButton()
+                    .disabled(updateChecker.state == .checking)
+                    Text(updateStatusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .id(Self.aboutAnchor)
+        }
+    }
+
+    private static let aboutAnchor = "settings-about"
+
+    private func revealAboutIfRequested(_ proxy: ScrollViewProxy) {
+        guard updateChecker.aboutRevealRequested else { return }
+        updateChecker.aboutRevealRequested = false
+        selectedTab = .advanced
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            withAnimation(.easeInOut) { proxy.scrollTo(Self.aboutAnchor, anchor: .top) }
+        }
+    }
+
+    private var updateStatusText: String {
+        switch updateChecker.state {
+        case .checking:
+            return "Looking for a newer release…"
+        case .upToDate:
+            return "Ledgerly is up to date."
+        case .failed(let message):
+            return message
+        case .idle:
+            guard let date = updateChecker.lastCheckDate else { return "Not checked yet." }
+            return "Last checked \(date.formatted(date: .abbreviated, time: .shortened))."
         }
     }
 
