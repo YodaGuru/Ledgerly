@@ -2,6 +2,26 @@
 
 All notable changes to Ledgerly are documented here.
 
+## [3.2.0] - 2026-11-15
+
+### What’s New
+
+- Track the balance owed on a bill, such as a credit card or loan. Turn on “Track balance owed” in the bill editor and enter what you owe today; each payment logged after that, including partial and automatic payments, lowers it. The bill details pane shows what’s left, a progress bar, and how much has been paid, and the bill list shows the amount owed under the bill name. Changing the amount later starts the balance over from the new figure.
+- Ledgerly now checks GitHub for new releases when it opens and about once a day. When a newer version is available, an “Update Available” button appears at the bottom of the sidebar. Clicking it opens Settings → Advanced → About, which shows the new version, a short summary of its release notes, a link to the release page, and an Update Now button that downloads the new disk image.
+- Added Check for Updates to the Ledgerly menu and to Settings → About, along with a switch to turn automatic checks off.
+
+### Notifications
+
+- Reminders are now scheduled for each bill’s next six due dates, not just the next one, so they keep arriving even if Ledgerly stays closed for a while. The soonest 60 are kept, because macOS limits how many each app can have waiting.
+- Ledgerly now asks for notification permission the first time it opens. Before, reminders were never scheduled unless you pressed “Allow Notifications in macOS” in Settings.
+- Reminders now appear as banners while Ledgerly is the active app. Before, macOS hid them.
+- Reminders now update whenever a bill changes, including payments, edits, archiving, skipping, and synced changes. Archived bills no longer send reminders, bills paid before their reminder no longer say they’re due soon, and partially paid bills show the remaining amount.
+- Bills with a 0-day reminder now say “is due today” instead of “is due soon”.
+
+### Changed
+
+- The version number in Settings → About now comes from the app itself instead of being typed into the code by hand.
+
 ## [3.1.0] - 2026-10-30
 
 ### What’s New
