@@ -14,6 +14,8 @@ an account or bank connection.
 - Payment history with confirmation numbers and attachments
 - Twelve-month bill forecast and monthly set-aside suggestions
 - Income tracking with a monthly after-bills summary
+- Balance owed tracking for credit cards and loans
+- Update Available notice when a new GitHub release is published
 - Automatic-payment logging for eligible bills
 - Local password protection backed by macOS Keychain
 - Liquid Glass interface on macOS 26 with adaptive material fallbacks
@@ -26,12 +28,12 @@ an account or bank connection.
 
 ## Install
 
-1. Download `Ledgerly-3.1.0.dmg` from the
+1. Download `Ledgerly-3.2.0.dmg` from the
    [latest GitHub Release](https://github.com/YodaGuru/Ledgerly/releases/latest).
 2. Open the disk image.
 3. Drag Ledgerly into Applications.
 
-Ledgerly 3.1.0 is currently ad-hoc signed and not Apple-notarized. macOS may
+Ledgerly 3.2.0 is currently ad-hoc signed and not Apple-notarized. macOS may
 show a Gatekeeper warning when opening a downloaded build.
 
 ## Privacy
@@ -56,7 +58,7 @@ chmod +x build.sh
 ./build.sh
 ```
 
-The script creates the app and `Ledgerly-3.1.0.dmg`. It targets Apple silicon
+The script creates the app and `Ledgerly-3.2.0.dmg`. It targets Apple silicon
 and macOS 13 or later.
 
 ## Support and security
