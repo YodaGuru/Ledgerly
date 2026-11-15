@@ -11,17 +11,29 @@ import CoreImage
 @main
 struct LedgerlyApp: App {
     @StateObject private var store = BillStore()
+    @StateObject private var updateChecker = UpdateChecker()
+
+    init() {
+        UNUserNotificationCenter.current().delegate = NotificationPresenter.shared
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
+                .environmentObject(updateChecker)
+                .task { updateChecker.start() }
                 .frame(minWidth: 920, minHeight: 640)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                     store.reloadFromDiskIfChanged()
                 }
         }
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    Task { await updateChecker.check(userInitiated: true) }
+                }
+            }
             CommandGroup(after: .newItem) {
                 Button("Add Bill…") {
                     NotificationCenter.default.post(name: .showAddBill, object: nil)
