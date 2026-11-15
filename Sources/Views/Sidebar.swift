@@ -65,6 +65,7 @@ struct Sidebar: View {
                 updateAvailableButton(update)
             }
         }
+        .listStyle(.sidebar)
     }
 
     /// Pinned to the bottom of the sidebar, only while a newer release exists.
