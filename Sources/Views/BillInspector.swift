@@ -80,6 +80,10 @@ struct BillInspector: View {
                         }
                     }
 
+                    if let remaining = bill.remainingBalanceOwed, let total = bill.balanceOwed {
+                        BalanceOwedCard(remaining: remaining, total: total, paid: bill.paidTowardBalance)
+                    }
+
                     Button("Log Payment", action: onPay)
                         .ledgerlyGlassButton(prominent: true)
                         .controlSize(.large)
@@ -188,6 +192,36 @@ struct BillInspector: View {
             websiteBrandImage = nil
             websiteBrandAccent = nil
         }
+    }
+}
+struct BalanceOwedCard: View {
+    let remaining: Double
+    let total: Double
+    let paid: Double
+
+    private var progress: Double {
+        guard total > 0.005 else { return 1 }
+        return min(max(paid / total, 0), 1)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("Balance owed", systemImage: "creditcard")
+                    .font(.headline)
+                Spacer()
+                Text(remaining <= 0.005 ? "Paid off" : remaining.currency)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(remaining <= 0.005 ? Color(hex: "#58A66B") : .primary)
+            }
+            ProgressView(value: progress)
+                .tint(Color(hex: "#58A66B"))
+            Text("\(paid.currency) paid of \(total.currency)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 struct InspectorLink: View {
